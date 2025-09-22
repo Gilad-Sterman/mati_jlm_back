@@ -216,6 +216,22 @@ class ClientController {
           message: 'Client name is required and must be at least 2 characters'
         });
       }
+
+      if (!email || !email.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Client email is required'
+        });
+      }
+
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid email address'
+        });
+      }
       
       // Build metadata object from individual fields
       const metadata = {};
@@ -228,7 +244,7 @@ class ClientController {
       
       const clientData = {
         name: name.trim(),
-        email: email ? email.trim() : null,
+        email: email.trim(), // Email is now required
         metadata: Object.keys(metadata).length > 0 ? metadata : {}
       };
       

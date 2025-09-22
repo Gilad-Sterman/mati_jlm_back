@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { supabase, supabaseAdmin } = require('../config/database');
+const authConfig = require('../config/auth');
 
 class SocketService {
   constructor() {
@@ -43,18 +44,30 @@ class SocketService {
         }
 
         // Verify JWT token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, authConfig.jwt.secret);
         
-        // Get user details from database
+        // Get user ID from JWT (we know it's 'id' field now)
+        const userId = decoded.id;
+        
+        if (!userId) {
+          console.error('❌ No user ID found in JWT token');
+          return next(new Error('Invalid token: no user ID'));
+        }
+
+        // Get user details from database (without is_active for now)
         const client = supabaseAdmin || supabase;
         const { data: user, error } = await client
           .from('users')
-          .select('id, email, name, role, is_active')
-          .eq('id', decoded.userId)
+          .select('id, email, name, role')
+          .eq('id', userId)
           .single();
 
-        if (error || !user || !user.is_active) {
-          return next(new Error('Invalid or inactive user'));
+        if (error) {
+          return next(new Error('Database error during user lookup'));
+        }
+
+        if (!user) {
+          return next(new Error('User not found'));
         }
 
         // Attach user info to socket
