@@ -1,6 +1,7 @@
 const SessionService = require('../services/sessionService');
 const CloudinaryService = require('../services/cloudinaryService');
 const ClientService = require('../services/clientService');
+const JobService = require('../services/jobService');
 const socketService = require('../services/socketService');
 
 class SessionController {
@@ -201,6 +202,40 @@ class SessionController {
         duration: updateData.duration
       });
       console.log(`📡 Complete event sent: ${completeSent}`);
+
+      // Create transcription job after successful upload
+      try {
+        const transcriptionJob = await JobService.createJob({
+          session_id: sessionId,
+          type: 'transcribe',
+          payload: {
+            file_url: uploadResult.data.secure_url,
+            file_name: file.originalname,
+            file_type: file.mimetype,
+            duration: updateData.duration
+          },
+          priority: 10 // High priority for transcription
+        });
+
+        console.log(`🎵 Created transcription job ${transcriptionJob.id} for session ${sessionId}`);
+
+        // Emit job created event
+        socketService.sendToUser(userId, 'transcription_queued', {
+          sessionId,
+          jobId: transcriptionJob.id,
+          message: 'Transcription job created and queued for processing'
+        });
+
+      } catch (jobError) {
+        console.error(`❌ Failed to create transcription job for session ${sessionId}:`, jobError);
+        
+        // Don't fail the entire upload, but notify user
+        socketService.sendToUser(userId, 'transcription_queue_error', {
+          sessionId,
+          message: 'File uploaded successfully, but transcription could not be queued',
+          error: jobError.message
+        });
+      }
 
       console.log(`✅ Background upload completed for session ${sessionId}`);
 

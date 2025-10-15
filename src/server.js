@@ -9,6 +9,7 @@ const corsConfig = require('./config/cors');
 
 // Import services
 const socketService = require('./services/socketService');
+const WorkerManager = require('./workers/workerManager');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
@@ -20,6 +21,7 @@ const clientRoutes = require('./routes/clients');
 const sessionRoutes = require('./routes/sessions');
 const reportRoutes = require('./routes/reports');
 const socketRoutes = require('./routes/socket');
+const workerRoutes = require('./routes/worker');
 
 const app = express();
 const server = createServer(app);
@@ -43,6 +45,9 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Initialize worker manager
+const workerManager = new WorkerManager();
+
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -50,10 +55,12 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/socket', socketRoutes);
+app.use('/api/worker', workerRoutes);
 
 // Make socket service accessible to routes
 app.set('socketService', socketService);
 app.set('io', io);
+app.set('workerManager', workerManager);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);
@@ -68,9 +75,14 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
+
 // Graceful shutdown
 const gracefulShutdown = () => {
   console.log('Received shutdown signal, closing server gracefully...');
+  
+  // Stop worker first
+  workerManager.stop();
+  
   server.close(() => {
     console.log('Server closed successfully');
     process.exit(0);
@@ -80,9 +92,22 @@ const gracefulShutdown = () => {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
   console.log(`📊 Health check available at http://localhost:${PORT}/health`);
+  
+  // Start embedded worker if configured
+  if (WorkerManager.shouldRunEmbedded()) {
+    console.log('🔧 Starting embedded AI worker...');
+    try {
+      await workerManager.startEmbedded();
+      console.log('✅ Embedded AI worker started successfully');
+    } catch (error) {
+      console.error('❌ Failed to start embedded worker:', error);
+    }
+  } else {
+    console.log('ℹ️ Worker will run as separate process. Start with: npm run worker');
+  }
 });
 
 module.exports = { app, server, io };

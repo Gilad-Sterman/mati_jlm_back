@@ -6,6 +6,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
+    "worker": "node src/workers/startWorker.js",
+    "worker:dev": "nodemon src/workers/startWorker.js",
     "db:init": "node src/DB/setup.js init",
     "db:seed": "node src/DB/setup.js seed",
     "db:check": "node src/DB/setup.js check"
@@ -28,6 +30,7 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
+    "openai": "^4.67.1",
     "pg": "^8.16.3",
     "socket.io": "^4.8.1"
   }
