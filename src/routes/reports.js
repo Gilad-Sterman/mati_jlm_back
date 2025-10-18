@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 // Import controllers and middleware
+const ReportController = require('../controllers/reportController');
 const { authenticate, requireAdmin, requireAdminOrAdviser } = require('../middleware/auth');
 const { 
   validateUUIDParam, 
@@ -17,22 +18,7 @@ router.get('/',
   authenticate, 
   requireAdminOrAdviser, 
   validatePagination, 
-  (req, res) => {
-    // Placeholder - will implement ReportController later
-    res.json({
-      success: true,
-      message: 'Reports route working',
-      data: {
-        reports: [],
-        pagination: {
-          page: 1,
-          limit: 10,
-          total: 0,
-          totalPages: 0
-        }
-      }
-    });
-  }
+  ReportController.getReports
 );
 
 /**
@@ -44,33 +30,7 @@ router.get('/session/:sessionId',
   authenticate, 
   requireAdminOrAdviser, 
   validateUUIDParam('sessionId'), 
-  (req, res) => {
-    // Placeholder - will implement ReportController later
-    res.json({
-      success: true,
-      message: 'Session reports route working',
-      data: {
-        reports: [
-          {
-            id: 'placeholder-adviser-report',
-            session_id: req.params.sessionId,
-            type: 'adviser',
-            status: 'approved',
-            version_number: 1,
-            is_current_version: true
-          },
-          {
-            id: 'placeholder-client-report',
-            session_id: req.params.sessionId,
-            type: 'client',
-            status: 'approved',
-            version_number: 1,
-            is_current_version: true
-          }
-        ]
-      }
-    });
-  }
+  ReportController.getReportsForSession
 );
 
 /**
@@ -82,24 +42,7 @@ router.get('/:id',
   authenticate, 
   requireAdminOrAdviser, 
   validateUUIDParam('id'), 
-  (req, res) => {
-    // Placeholder - will implement ReportController later
-    res.json({
-      success: true,
-      message: 'Get report route working',
-      data: {
-        report: {
-          id: req.params.id,
-          title: 'Sample Report',
-          type: 'adviser',
-          status: 'approved',
-          content: 'This is a sample report content...',
-          version_number: 1,
-          is_current_version: true
-        }
-      }
-    });
-  }
+  ReportController.getReportById
 );
 
 /**
@@ -111,20 +54,7 @@ router.put('/:id',
   authenticate, 
   requireAdminOrAdviser, 
   validateUUIDParam('id'), 
-  (req, res) => {
-    // Placeholder - will implement ReportController later
-    res.json({
-      success: true,
-      message: 'Update report route working',
-      data: {
-        report: {
-          id: req.params.id,
-          ...req.body,
-          updated_at: new Date().toISOString()
-        }
-      }
-    });
-  }
+  ReportController.updateReport
 );
 
 /**
@@ -136,21 +66,7 @@ router.post('/:id/approve',
   authenticate, 
   requireAdminOrAdviser, 
   validateUUIDParam('id'), 
-  (req, res) => {
-    // Placeholder - will implement ReportController later
-    res.json({
-      success: true,
-      message: 'Report approval route working',
-      data: {
-        report: {
-          id: req.params.id,
-          status: 'approved',
-          approved_by: req.user.id,
-          approved_at: new Date().toISOString()
-        }
-      }
-    });
-  }
+  ReportController.approveReport
 );
 
 /**
@@ -162,21 +78,7 @@ router.post('/:id/regenerate',
   authenticate, 
   requireAdminOrAdviser, 
   validateUUIDParam('id'), 
-  (req, res) => {
-    // Placeholder - will implement ReportController later
-    res.json({
-      success: true,
-      message: 'Report regeneration route working',
-      data: {
-        job: {
-          id: 'placeholder-job-id',
-          type: 'regenerate_report',
-          status: 'pending',
-          report_id: req.params.id
-        }
-      }
-    });
-  }
+  ReportController.regenerateReport
 );
 
 // Test route

@@ -83,7 +83,7 @@ class SessionService {
         .from('sessions')
         .select(`
           id, client_id, adviser_id, title, file_url, file_name, 
-          file_size, file_type, duration, status, created_at, updated_at,
+          file_size, file_type, duration, status, created_at, updated_at, transcription_text,
           client:clients(id, name, email, metadata),
           adviser:users(id, name, email)
         `);
