@@ -205,11 +205,6 @@ class OpenAIService {
    * Generate report using GPT based on transcript (or mock)
    */
   async generateReport(transcript, reportType, options = {}) {
-    // Check if we're in mock mode
-    if (this.isMockMode()) {
-      return this.mockGenerateReport(transcript, reportType, options);
-    }
-
     try {
       console.log(`📝 Generating ${reportType} report...`);
 
@@ -218,7 +213,7 @@ class OpenAIService {
       const startTime = Date.now();
 
       const response = await this.openai.chat.completions.create({
-        model: options.model || 'gpt-4',
+        model: options.model || 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -240,7 +235,7 @@ class OpenAIService {
         content: response.choices[0].message.content,
         type: reportType,
         metadata: {
-          model: options.model || 'gpt-4',
+          model: options.model || 'gpt-4o-mini',
           processing_time_ms: duration,
           tokens_used: response.usage?.total_tokens || 0,
           generated_at: new Date().toISOString()
@@ -350,9 +345,32 @@ class OpenAIService {
    * Build prompt for report generation
    */
   buildReportPrompt(transcript, reportType, options = {}) {
+    const { sessionContext } = options;
+    
+    // Build session information section
+    let sessionInfo = '';
+    if (sessionContext) {
+      const sessionDate = sessionContext.sessionDate ? new Date(sessionContext.sessionDate).toLocaleDateString('he-IL') : '[Insert Date]';
+      const duration = sessionContext.duration ? `${Math.floor(sessionContext.duration / 60)}:${(sessionContext.duration % 60).toString().padStart(2, '0')}` : '[Unknown Duration]';
+      
+      sessionInfo = `
+Session Information:
+- Meeting Date: ${sessionDate}
+- Client Name: ${sessionContext.clientName || '[Insert Client Name]'}
+- Client Email: ${sessionContext.clientEmail || '[Not provided]'}
+- Business Domain: ${sessionContext.businessDomain || '[Not specified]'}
+- Adviser Name: ${sessionContext.adviserName || '[Insert Adviser Name]'}
+- Adviser Email: ${sessionContext.adviserEmail || '[Insert Adviser Email]'}
+- Session Title: ${sessionContext.sessionTitle || '[Insert Session Title]'}
+- Meeting Duration: ${duration}
+- Audio File: ${sessionContext.fileName || '[Insert File Name]'}
+
+`;
+    }
+
     const basePrompt = `Please analyze the following meeting transcript and generate a comprehensive ${reportType} report.
 
-Transcript:
+${sessionInfo}Transcript:
 ${transcript}
 
 Please provide:
@@ -361,6 +379,8 @@ Please provide:
 3. Action Items
 4. Next Steps
 5. Important Decisions Made
+
+IMPORTANT: Use the actual session information provided above instead of placeholders. Replace any [Insert X] placeholders with the real data provided.
 
 `;
 
@@ -393,12 +413,12 @@ Format the report professionally for client delivery.`;
    * Get system prompt based on report type
    */
   getSystemPrompt(reportType) {
-    const baseSystem = "You are an AI assistant specialized in analyzing business meeting transcripts and generating professional reports.";
+    const baseSystem = "You are an AI assistant specialized in analyzing business meeting transcripts and generating professional reports. Always use the actual session information provided (client names, adviser names, dates, etc.) instead of generic placeholders like [Insert Name] or [Insert Date].";
 
     if (reportType === 'advisor') {
-      return baseSystem + " Generate detailed internal reports for business advisors with analytical insights and strategic recommendations.";
+      return baseSystem + " Generate detailed internal reports for business advisors with analytical insights and strategic recommendations. Include specific client details and personalize the report with actual names and information provided.";
     } else if (reportType === 'client') {
-      return baseSystem + " Generate client-facing reports that are clear, professional, and actionable for business clients.";
+      return baseSystem + " Generate client-facing reports that are clear, professional, and actionable for business clients. Use the client's actual name and business context throughout the report.";
     }
 
     return baseSystem;

@@ -298,8 +298,23 @@ class AIWorker {
         message: 'Generating advisor report...'
       });
 
-      // Generate advisor report only
-      const advisorReport = await openaiService.generateReport(transcript, 'advisor');
+      // Generate advisor report with session context
+      const advisorReport = await openaiService.generateReport(transcript, 'advisor', {
+        sessionContext: {
+          sessionId: session.id,
+          clientName: session.client?.name || 'Unknown Client',
+          clientEmail: session.client?.email,
+          clientPhone: session.client?.phone,
+          businessDomain: session.client?.metadata?.business_domain,
+          adviserName: session.adviser?.name || 'Unknown Adviser',
+          adviserEmail: session.adviser?.email,
+          sessionTitle: session.title,
+          sessionDate: session.created_at,
+          fileName: session.file_name,
+          duration: session.duration,
+          fileSize: session.file_size
+        }
+      });
 
       console.log(`✅ Advisor report generated for session ${sessionId}`);
 
