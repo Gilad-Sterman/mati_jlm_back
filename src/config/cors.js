@@ -8,12 +8,20 @@ const corsConfig = {
       return callback(null, true);
     }
     
+    // Get the current server URL for same-origin requests
+    const serverUrl = process.env.RENDER_EXTERNAL_URL || process.env.SERVER_URL;
+    
+    // If frontend is served from same server, allow same-origin requests
+    if (serverUrl && origin === serverUrl) {
+      return callback(null, true);
+    }
+    
     const allowedOrigins = process.env.CORS_ORIGINS 
       ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
       : ['http://localhost:3000', 'http://localhost:5000', 'http://localhost:5173'];
     
     // Log the origin for debugging
-    console.log('CORS check - Origin:', origin, 'Allowed:', allowedOrigins);
+    console.log('CORS check - Origin:', origin, 'Server URL:', serverUrl, 'Allowed:', allowedOrigins);
     
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
