@@ -12,6 +12,9 @@ const corsConfig = {
       ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
       : ['http://localhost:3000', 'http://localhost:5000', 'http://localhost:5173'];
     
+    // Log the origin for debugging
+    console.log('CORS check - Origin:', origin, 'Allowed:', allowedOrigins);
+    
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
