@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="200" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Main Logo Text -->
+  <text x="200" y="80" font-family="Arial, sans-serif" font-size="40" font-weight="bold" text-anchor="middle" fill="#006699">מט"י ירושלים</text>
+  
+  <!-- Subtitle -->
+  <text x="200" y="120" font-family="Arial, sans-serif" font-size="24" text-anchor="middle" fill="#4CAF50">מרכז טיפוח יזמות</text>
+  
+  <!-- Arrow Symbol -->
+  <path d="M300,60 C340,40 360,100 320,140 L340,140 L310,170 L280,140 L300,140 C330,110 320,70 300,60 Z" fill="url(#gradient)" />
+  
+  <!-- Gradient Definition -->
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8BC34A;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#009688;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+</svg>
