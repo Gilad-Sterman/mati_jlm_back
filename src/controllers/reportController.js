@@ -9,19 +9,19 @@ class ReportController {
       const { page = 1, limit = 10 } = req.query;
       const user = req.user;
 
-      // TODO: Implement pagination and user filtering
-      // For now, return empty array as placeholder
+      // Get all reports from database
+      const reports = await ReportService.getAllReports();
       
       res.json({
         success: true,
         message: 'Reports retrieved successfully',
         data: {
-          reports: [],
+          reports: reports,
           pagination: {
             page: parseInt(page),
             limit: parseInt(limit),
-            total: 0,
-            totalPages: 0
+            total: reports.length,
+            totalPages: Math.ceil(reports.length / parseInt(limit))
           }
         }
       });

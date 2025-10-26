@@ -112,6 +112,30 @@ class ReportService {
   }
 
   /**
+   * Get ALL reports - simple and efficient!
+   */
+  static async getAllReports() {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('reports')
+        .select('*')
+        .eq('is_current_version', true)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw new Error(`Failed to get all reports: ${error.message}`);
+      }
+
+      console.log(`📊 Retrieved ${data.length} reports from database`);
+      return data;
+
+    } catch (error) {
+      console.error('Error getting all reports:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get reports for a session
    */
   static async getReportsForSession(sessionId) {
