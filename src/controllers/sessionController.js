@@ -11,7 +11,7 @@ class SessionController {
   static async createSession(req, res) {
     try {
       const userId = req.user.id;
-      const { client_id, title, newClient } = req.body;
+      const { client_id, title, newClient, fileName } = req.body;
       
       // Check if file was uploaded
       if (!req.file) {
@@ -100,12 +100,15 @@ class SessionController {
         }
       }
 
+      // Use the fileName from form data (preserves UTF-8) or fallback to req.file.originalname
+      const actualFileName = fileName || req.file.originalname;
+      
       // Create session in database with temporary file info (before Cloudinary upload)
       const sessionData = {
         client_id: finalClientId,
         title: title?.trim() || null,
         file_url: null, // Will be updated after Cloudinary upload
-        file_name: req.file.originalname,
+        file_name: actualFileName,
         file_size: req.file.size,
         file_type: req.file.mimetype,
         status: 'uploading', // New status to indicate upload in progress
@@ -132,13 +135,13 @@ class SessionController {
       // Emit socket event that upload started
       socketService.sendToUser(userId, 'upload_started', {
         sessionId: session.id,
-        fileName: req.file.originalname,
+        fileName: actualFileName,
         fileSize: req.file.size,
         message: 'File upload to cloud storage started'
       });
 
       // Start background Cloudinary upload
-      SessionController.handleBackgroundUpload(session.id, req.file, userId);
+      SessionController.handleBackgroundUpload(session.id, req.file, userId, actualFileName);
 
     } catch (error) {
       res.status(500).json({
@@ -151,28 +154,23 @@ class SessionController {
   /**
    * Handle background file upload to Cloudinary with socket notifications
    */
-  static async handleBackgroundUpload(sessionId, file, userId) {
+  static async handleBackgroundUpload(sessionId, file, userId, actualFileName) {
     try {
-      console.log(`🚀 Starting background upload for session ${sessionId}`);
-      
       // Emit progress update
-      console.log(`📡 Sending upload_progress to user ${userId}`);
       const progressSent = socketService.sendToUser(userId, 'upload_progress', {
         sessionId,
         progress: 10,
         message: 'Preparing file for upload...'
       });
-      console.log(`📡 Progress event sent: ${progressSent}`);
 
       // Upload file to Cloudinary
       const uploadResult = await CloudinaryService.uploadTempFile(
         file.path,
-        file.originalname,
+        actualFileName,
         { folder: 'mati/sessions' }
       );
 
       // Emit progress update
-      console.log(`📡 Sending upload_progress (80%) to user ${userId}`);
       socketService.sendToUser(userId, 'upload_progress', {
         sessionId,
         progress: 80,
@@ -193,7 +191,6 @@ class SessionController {
       await SessionService.updateSession(sessionId, updateData, userId, 'advisor');
 
       // Emit final success
-      console.log(`📡 Sending upload_complete to user ${userId}`);
       const completeSent = socketService.sendToUser(userId, 'upload_complete', {
         sessionId,
         progress: 100,
@@ -201,7 +198,6 @@ class SessionController {
         fileUrl: uploadResult.data.secure_url,
         duration: updateData.duration
       });
-      console.log(`📡 Complete event sent: ${completeSent}`);
 
       // Create transcription job after successful upload
       try {
@@ -210,14 +206,12 @@ class SessionController {
           type: 'transcribe',
           payload: {
             file_url: uploadResult.data.secure_url,
-            file_name: file.originalname,
+            file_name: actualFileName,
             file_type: file.mimetype,
             duration: updateData.duration
           },
           priority: 10 // High priority for transcription
         });
-
-        console.log(`🎵 Created transcription job ${transcriptionJob.id} for session ${sessionId}`);
 
         // Emit job created event
         socketService.sendToUser(userId, 'transcription_queued', {
@@ -236,8 +230,6 @@ class SessionController {
           error: jobError.message
         });
       }
-
-      console.log(`✅ Background upload completed for session ${sessionId}`);
 
     } catch (error) {
       console.error(`❌ Background upload failed for session ${sessionId}:`, error);

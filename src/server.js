@@ -99,7 +99,6 @@ server.listen(PORT, async () => {
   
   // Start embedded worker if configured
   if (WorkerManager.shouldRunEmbedded()) {
-    console.log('🔧 Starting embedded AI worker...');
     try {
       await workerManager.startEmbedded();
       console.log('✅ Embedded AI worker started successfully');

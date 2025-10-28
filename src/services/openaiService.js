@@ -53,7 +53,6 @@ class OpenAIService {
     try {
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
-        console.log(`🗑️ Cleaned up temp file: ${filePath}`);
       }
     } catch (error) {
       console.error('Error cleaning up temp file:', error);
@@ -61,22 +60,15 @@ class OpenAIService {
   }
 
   /**
-   * Transcribe audio file using OpenAI Whisper (or mock)
+   * Transcribe audio file using OpenAI Whisper
    */
   async transcribeAudio(fileUrl, fileName, options = {}) {
-    // Check if we're in mock mode
-    if (this.isMockMode()) {
-      return this.mockTranscribeAudio(fileUrl, fileName, options);
-    }
 
     let tempFilePath = null;
 
     try {
-      console.log(`🎵 Starting transcription for: ${fileName}`);
-
       // Download file to temp location
       tempFilePath = await this.downloadFile(fileUrl, fileName);
-      console.log(`📥 Downloaded file to: ${tempFilePath}`);
 
       // Check file size (Whisper has 25MB limit)
       const stats = fs.statSync(tempFilePath);
@@ -85,8 +77,6 @@ class OpenAIService {
       if (fileSizeInMB > 25) {
         throw new Error(`File size (${fileSizeInMB.toFixed(2)}MB) exceeds OpenAI's 25MB limit`);
       }
-
-      console.log(`📊 File size: ${fileSizeInMB.toFixed(2)}MB`);
 
       // Prepare transcription options
       const transcriptionOptions = {
@@ -101,14 +91,12 @@ class OpenAIService {
         transcriptionOptions.language = options.language;
       }
 
-      console.log(`🚀 Sending to OpenAI Whisper...`);
       const startTime = Date.now();
 
       // Call OpenAI Whisper API
       const response = await this.openai.audio.transcriptions.create(transcriptionOptions);
 
       const duration = Date.now() - startTime;
-      console.log(`✅ Transcription completed in ${duration}ms`);
 
       // Return structured response
       return {
@@ -147,67 +135,10 @@ class OpenAIService {
   }
 
   /**
-   * Mock transcription for testing without OpenAI API
-   */
-  async mockTranscribeAudio(fileUrl, fileName, options = {}) {
-    console.log(`🎭 MOCK: Starting transcription for: ${fileName}`);
-    console.log(`🎭 MOCK: File URL: ${fileUrl}`);
-
-    const startTime = Date.now();
-
-    // Simulate processing delay (3-8 seconds)
-    const delayMs = Math.floor(Math.random() * 5000) + 3000;
-    console.log(`🎭 MOCK: Simulating ${delayMs}ms processing delay...`);
-    
-    await new Promise(resolve => setTimeout(resolve, delayMs));
-
-    const duration = Date.now() - startTime;
-
-    // Generate mock transcript
-    const mockTranscripts = [
-      "שלום, זה פגישה לדוגמה עם לקוח. אנחנו דנים על האסטרטגיה העסקית שלהם ואיך לשפר את הביצועים. הלקוח מעוניין בפתרונות דיגיטליים חדשים.",
-      "Hello, this is a sample business meeting. We are discussing the client's current challenges and potential solutions. The main focus is on improving operational efficiency and customer satisfaction.",
-      "בפגישה זו דנו על תוכנית העבודה לרבעון הבא. הלקוח הציג את המטרות שלו ואנחנו הצענו מספר אסטרטגיות לביצוע. יש צורך במעקב צמוד על ההתקדמות.",
-      "The client expressed concerns about their current market position. We discussed various approaches to strengthen their competitive advantage and explored new business opportunities."
-    ];
-
-    const randomTranscript = mockTranscripts[Math.floor(Math.random() * mockTranscripts.length)];
-
-    console.log(`✅ MOCK: Transcription completed in ${duration}ms`);
-
-    return {
-      text: randomTranscript,
-      language: randomTranscript.includes('שלום') || randomTranscript.includes('בפגישה') ? 'he' : 'en',
-      duration: 120 + Math.floor(Math.random() * 180), // 2-5 minutes
-      segments: [
-        {
-          start: 0,
-          end: 30,
-          text: randomTranscript.substring(0, Math.floor(randomTranscript.length / 2))
-        },
-        {
-          start: 30,
-          end: 120,
-          text: randomTranscript.substring(Math.floor(randomTranscript.length / 2))
-        }
-      ],
-      metadata: {
-        model: 'whisper-1-mock',
-        processing_time_ms: duration,
-        file_size_mb: 2.5 + Math.random() * 10, // Random size between 2.5-12.5MB
-        transcribed_at: new Date().toISOString(),
-        mock_mode: true
-      }
-    };
-  }
-
-  /**
-   * Generate report using GPT based on transcript (or mock)
+   * Generate report using GPT based on transcript
    */
   async generateReport(transcript, reportType, options = {}) {
     try {
-      console.log(`📝 Generating ${reportType} report...`);
-
       const prompt = this.buildReportPrompt(transcript, reportType, options);
       
       const startTime = Date.now();
@@ -229,16 +160,29 @@ class OpenAIService {
       });
 
       const duration = Date.now() - startTime;
-      console.log(`✅ ${reportType} report generated in ${duration}ms`);
+      const rawContent = response.choices[0].message.content;
+
+      // Parse JSON response from OpenAI
+      let parsedContent;
+      try {
+        parsedContent = JSON.parse(rawContent);
+        console.log('✅ Successfully parsed JSON response from OpenAI');
+      } catch (parseError) {
+        console.error('❌ Failed to parse JSON response from OpenAI:', parseError);
+        console.log('Raw response:', rawContent);
+        // Fallback: return raw content if JSON parsing fails
+        parsedContent = { raw_content: rawContent, parse_error: true };
+      }
 
       return {
-        content: response.choices[0].message.content,
+        content: parsedContent,
         type: reportType,
         metadata: {
           model: options.model || 'gpt-4o-mini',
           processing_time_ms: duration,
           tokens_used: response.usage?.total_tokens || 0,
-          generated_at: new Date().toISOString()
+          generated_at: new Date().toISOString(),
+          is_structured: !parsedContent.parse_error
         }
       };
 
@@ -246,99 +190,6 @@ class OpenAIService {
       console.error(`Error generating ${reportType} report:`, error);
       throw new Error(`Report generation failed: ${error.message}`);
     }
-  }
-
-  /**
-   * Mock report generation for testing
-   */
-  async mockGenerateReport(transcript, reportType, options = {}) {
-    console.log(`🎭 MOCK: Generating ${reportType} report...`);
-    
-    const startTime = Date.now();
-
-    // Simulate processing delay (2-5 seconds)
-    const delayMs = Math.floor(Math.random() * 3000) + 2000;
-    console.log(`🎭 MOCK: Simulating ${delayMs}ms processing delay...`);
-    
-    await new Promise(resolve => setTimeout(resolve, delayMs));
-
-    const duration = Date.now() - startTime;
-
-    // Generate mock report based on type
-    let mockContent;
-    
-    if (reportType === 'advisor') {
-      mockContent = `# דוח יועץ - סיכום פגישה
-
-## סיכום כללי
-הפגישה התמקדה בהערכת המצב העסקי הנוכחי של הלקוח וזיהוי הזדמנויות לשיפור.
-
-## נקודות מפתח שנדונו:
-- אסטרטגיה עסקית ותכנון לטווח הארוך
-- שיפור יעילות תפעולית
-- פתרונות טכנולוגיים חדשים
-- ניתוח תחרותי ומיצוב בשוק
-
-## המלצות פעולה:
-1. **שיפור תהליכים**: יישום מערכות ניהול חדשות
-2. **פיתוח דיגיטלי**: השקעה בכלים טכנולוגיים
-3. **אסטרטגיה שיווקית**: חיזוק המיתוג והנוכחות הדיגיטלית
-
-## צעדים הבאים:
-- קביעת פגישת המשך תוך שבועיים
-- הכנת תוכנית עבודה מפורטת
-- ניתוח כדאיות כלכלית
-
-## הערות יועץ:
-הלקוח מראה מוטיבציה גבוהה ליישום השינויים. מומלץ להתחיל בצעדים קטנים ולבנות בהדרגה.
-
-**תאריך הדוח**: ${new Date().toLocaleDateString('he-IL')}
-**סטטוס**: טיוטה לבדיקה`;
-
-    } else if (reportType === 'client') {
-      mockContent = `# סיכום פגישה - דוח לקוח
-
-## תודה על הפגישה המועילה!
-
-זה היה נהדר להכיר אתכם ולשמוע על החזון והמטרות שלכם. הנה סיכום של הנושאים העיקריים שדנו עליהם:
-
-## מה דנו:
-✅ **המצב הנוכחי**: סקרנו את המצב העסקי הקיים והאתגרים העיקריים
-✅ **הזדמנויות צמיחה**: זיהינו תחומים עם פוטנציאל לשיפור
-✅ **פתרונות מומלצים**: הצגנו גישות שיכולות לעזור להשיג את המטרות
-
-## הצעדים הבאים:
-🎯 **תוכנית עבודה**: נכין תוכנית מפורטת המותאמת לצרכים שלכם
-🎯 **יישום הדרגתי**: נתחיל בשינויים קטנים ונבנה בהדרגה
-🎯 **מעקב והתאמה**: נבצע מעקב שוטף ונתאים את התוכנית לפי הצורך
-
-## מה חשוב לזכור:
-- השינויים יתבצעו בקצב שמתאים לכם
-- נהיה זמינים לכל שאלה או הבהרה
-- נעדכן אתכם בכל שלב של התהליך
-
-## פרטי יצירת קשר:
-📧 **אימייל**: advisor@mati.com
-📞 **טלפון**: 03-1234567
-
-תודה שבחרתם בנו ללוות אתכם במסע הזה!
-
-**תאריך**: ${new Date().toLocaleDateString('he-IL')}`;
-    }
-
-    console.log(`✅ MOCK: ${reportType} report generated in ${duration}ms`);
-
-    return {
-      content: mockContent,
-      type: reportType,
-      metadata: {
-        model: 'gpt-4-mock',
-        processing_time_ms: duration,
-        tokens_used: Math.floor(Math.random() * 500) + 300, // Random tokens 300-800
-        generated_at: new Date().toISOString(),
-        mock_mode: true
-      }
-    };
   }
 
   /**
@@ -381,6 +232,8 @@ Please provide:
 5. Important Decisions Made
 
 IMPORTANT ANALYSIS INSTRUCTIONS:
+- CRITICAL: Generate the entire report in the same language as the transcript. If the transcript is in Hebrew, write the report in Hebrew. If in English, write in English. Match the language exactly.
+- CRITICAL: Respond ONLY with valid JSON. Do not include any markdown formatting, explanatory text, or content outside the JSON object.
 - Use the actual session information provided above instead of placeholders. Replace any [Insert X] placeholders with the real data provided.
 - Carefully read through the transcript to identify different speakers based on context clues, names mentioned, and conversation flow
 - Look for patterns like "Tony said", "Carrie responded", or changes in speaking style/topic that indicate different speakers
@@ -482,12 +335,12 @@ Format the report professionally for client delivery.`;
    * Get system prompt based on report type
    */
   getSystemPrompt(reportType) {
-    const baseSystem = "You are an AI assistant specialized in analyzing business conversations and generating professional reports. You can handle various types of audio content including meetings, consultations, presentations, and monologues. Always use the actual session information provided (client names, adviser names, dates, etc.) instead of generic placeholders like [Insert Name] or [Insert Date]. Be adaptive to the content type and provide valuable insights regardless of the conversation format.";
+    const baseSystem = "You are an AI assistant specialized in analyzing business conversations and generating professional reports. You can handle various types of audio content including meetings, consultations, presentations, and monologues. Always use the actual session information provided (client names, adviser names, dates, etc.) instead of generic placeholders like [Insert Name] or [Insert Date]. Be adaptive to the content type and provide valuable insights regardless of the conversation format. CRITICAL: Always respond in the same language as the transcript provided. If the transcript is in Hebrew, respond entirely in Hebrew. If in English, respond entirely in English. Match the language of the conversation exactly. IMPORTANT: You must respond with a valid JSON object only - no markdown, no additional text, just pure JSON.";
 
     if (reportType === 'advisor') {
-      return baseSystem + " Generate detailed internal reports for business advisors with analytical insights and strategic recommendations. Include specific client details and personalize the report with actual names and information provided. Focus on actionable insights for the advisor, including conversation dynamics, client psychology, and strategic recommendations. If the content is not a typical meeting format, adapt your analysis to still provide valuable business insights.";
+      return baseSystem + " Generate detailed internal reports for business advisors with analytical insights and strategic recommendations. Include specific client details and personalize the report with actual names and information provided. Focus on actionable insights for the advisor, including conversation dynamics, client psychology, and strategic recommendations. If the content is not a typical meeting format, adapt your analysis to still provide valuable business insights. Return the response as a JSON object with the following structure: {\"meeting_summary\": \"string\", \"key_points\": [\"array of strings\"], \"action_items\": [\"array of strings\"], \"next_steps\": [\"array of strings\"], \"decisions_made\": [\"array of strings\"], \"key_quotes\": [{\"speaker\": \"speaker name or role\", \"quote\": \"exact quote text\", \"context\": \"brief context\"}], \"client_psychology\": {\"overall_tone\": \"description\", \"engagement_level\": \"description\", \"energy_level\": \"description\", \"concerns_resistance\": \"description\", \"motivation_level\": \"description\", \"decision_making_style\": \"description\"}, \"strategic_recommendations\": \"string\", \"conversation_dynamics\": {\"speaker_count\": \"single|multiple\", \"single_speaker\": {\"speaking_style\": \"description\", \"content_flow\": \"description\", \"key_themes\": [\"themes\"]}, \"multiple_speakers\": {\"primary_speaker\": {\"name\": \"name\", \"role\": \"role\", \"speaking_time_percentage\": \"percentage\", \"communication_style\": \"description\"}, \"secondary_speaker\": {\"name\": \"name\", \"role\": \"role\", \"speaking_time_percentage\": \"percentage\", \"communication_style\": \"description\"}, \"interaction_quality\": \"description\", \"dialogue_balance\": \"description\"}}, \"client_concerns\": [\"array of strings\"], \"opportunities_identified\": [\"array of strings\"]}";
     } else if (reportType === 'client') {
-      return baseSystem + " Generate client-facing reports that are clear, professional, and actionable for business clients. Use the client's actual name and business context throughout the report.";
+      return baseSystem + " Generate client-facing reports that are clear, professional, and actionable for business clients. Use the client's actual name and business context throughout the report. Return the response as a JSON object with the following structure: {\"meeting_summary\": \"string\", \"key_points\": [\"array of strings\"], \"action_items\": [\"array of strings\"], \"next_steps\": [\"array of strings\"], \"decisions_made\": [\"array of strings\"], \"recommendations\": \"string\", \"follow_up_items\": [\"array of strings\"]}";
     }
 
     return baseSystem;

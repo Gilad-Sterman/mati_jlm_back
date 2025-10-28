@@ -68,6 +68,9 @@ class CloudinaryService {
         fileSize: 500 * 1024 * 1024, // 500MB limit
         files: 1 // Only one file at a time
       },
+      // Ensure proper UTF-8 handling for filenames
+      preservePath: false,
+      encoding: 'utf8',
       fileFilter: (req, file, cb) => {
         // Allowed MIME types for audio/video
         const allowedMimeTypes = [
@@ -110,10 +113,6 @@ class CloudinaryService {
 
       const uploadOptions = { ...defaultOptions, ...options };
       
-      console.log('🔍 Cloudinary upload options:', {
-        ...uploadOptions,
-        api_key: process.env.CLOUDINARY_API_KEY ? '***SET***' : 'MISSING'
-      });
       
       const result = await cloudinary.uploader.upload(tempFilePath, uploadOptions);
       

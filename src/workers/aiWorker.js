@@ -19,8 +19,6 @@ class AIWorker {
       console.log('⚠️ Worker is already running');
       return;
     }
-
-    console.log('🚀 Starting AI Worker...');
     
     // Check if OpenAI is configured
     if (!openaiService.isConfigured()) {
@@ -140,8 +138,6 @@ class AIWorker {
     const { file_url, file_name, file_type } = payload;
 
     try {
-      console.log(`🎵 Starting transcription for session ${sessionId}`);
-
       // Get session info to find the user
       const session = await SessionService.getSessionById(sessionId, null, 'admin');
       const userId = session.adviser_id;
@@ -263,8 +259,6 @@ class AIWorker {
         priority: 8 // Lower priority than transcription
       });
 
-      console.log(`📝 Created report generation job ${reportJob.id} for session ${sessionId}`);
-
     } catch (error) {
       console.error(`❌ Failed to create report generation job for session ${sessionId}:`, error);
     }
@@ -277,8 +271,6 @@ class AIWorker {
     const { transcript } = payload;
 
     try {
-      console.log(`📝 Starting report generation for session ${sessionId}`);
-
       // Get session info
       const session = await SessionService.getSessionById(sessionId, null, 'admin');
       const userId = session.adviser_id;
@@ -318,12 +310,18 @@ class AIWorker {
 
       console.log(`✅ Advisor report generated for session ${sessionId}`);
 
-      // Save advisor report to database
+      // Save advisor report to database (convert object to JSON string)
+      const contentString = typeof advisorReport.content === 'object' ? 
+        JSON.stringify(advisorReport.content) : 
+        advisorReport.content;
+      
+      console.log('📄 Storing report content type:', typeof advisorReport.content);
+      
       const savedAdvisorReport = await ReportService.createReport({
         session_id: sessionId,
         type: 'adviser',
         title: `Advisor Report - ${new Date().toLocaleDateString()}`,
-        content: advisorReport.content,
+        content: contentString,
         generation_metadata: {
           model: advisorReport.metadata.model,
           tokens_used: advisorReport.metadata.tokens_used,
@@ -358,7 +356,7 @@ class AIWorker {
         message: 'Advisor report generated successfully!',
         report: {
           id: savedAdvisorReport.id,
-          content: advisorReport.content,
+          content: advisorReport.content, // Send original object for immediate use
           type: 'adviser',
           status: 'draft'
         }

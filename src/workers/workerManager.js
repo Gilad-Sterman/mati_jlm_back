@@ -14,14 +14,10 @@ class WorkerManager {
       console.log('⚠️ Worker is already running');
       return;
     }
-
-    console.log('🚀 Starting embedded AI Worker...');
     
     this.worker = new AIWorker();
     await this.worker.start();
     this.isRunning = true;
-
-    console.log('✅ Embedded AI Worker started successfully');
   }
 
   /**
