@@ -34,30 +34,6 @@ router.get('/session/:sessionId',
 );
 
 /**
- * @route   GET /api/reports/:id
- * @desc    Get report by ID
- * @access  Private (Admin or own report)
- */
-router.get('/:id', 
-  authenticate, 
-  requireAdminOrAdviser, 
-  validateUUIDParam('id'), 
-  ReportController.getReportById
-);
-
-/**
- * @route   PUT /api/reports/:id
- * @desc    Update report
- * @access  Private (Admin or own report)
- */
-router.put('/:id', 
-  authenticate, 
-  requireAdminOrAdviser, 
-  validateUUIDParam('id'), 
-  ReportController.updateReport
-);
-
-/**
  * @route   POST /api/reports/:id/approve
  * @desc    Approve report
  * @access  Private (Admin or own report)
@@ -79,6 +55,30 @@ router.post('/:id/regenerate',
   requireAdminOrAdviser, 
   validateUUIDParam('id'), 
   ReportController.regenerateReport
+);
+
+/**
+ * @route   GET /api/reports/:id
+ * @desc    Get report by ID
+ * @access  Private (Admin or own report)
+ */
+router.get('/:id', 
+  authenticate, 
+  requireAdminOrAdviser, 
+  validateUUIDParam('id'), 
+  ReportController.getReportById
+);
+
+/**
+ * @route   PUT /api/reports/:id
+ * @desc    Update report
+ * @access  Private (Admin or own report)
+ */
+router.put('/:id', 
+  authenticate, 
+  requireAdminOrAdviser, 
+  validateUUIDParam('id'), 
+  ReportController.updateReport
 );
 
 // Test route

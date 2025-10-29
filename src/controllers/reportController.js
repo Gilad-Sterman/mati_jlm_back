@@ -213,7 +213,11 @@ class ReportController {
    */
   static async regenerateReport(req, res) {
     try {
+      console.log('🔄 Regenerate report endpoint hit:', req.params.id);
+      console.log('📝 Request body:', req.body);
+      
       const { id } = req.params;
+      const { notes } = req.body;
       const user = req.user;
 
       // Basic validation
@@ -224,20 +228,40 @@ class ReportController {
         });
       }
 
-      // TODO: Implement actual report regeneration
-      // TODO: Add authorization check
-      // TODO: Queue regeneration job
+      if (!notes || !notes.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Notes are required for report regeneration'
+        });
+      }
+
+      // Get the report to find session and validate ownership
+      const report = await ReportService.getReportById(id);
+      if (!report) {
+        return res.status(404).json({
+          success: false,
+          message: 'Report not found'
+        });
+      }
+
+      // TODO: Add authorization check - user should own the session or be admin
+      
+      // Start regeneration process
+      const job = await ReportService.regenerateFullReport(id, notes.trim(), user.id);
       
       res.json({
         success: true,
         message: 'Report regeneration started',
         data: {
           job: {
-            id: `job-${Date.now()}`,
-            type: 'regenerate_report',
-            status: 'pending',
-            report_id: id,
-            created_at: new Date().toISOString()
+            id: job.id,
+            type: job.type,
+            status: job.status,
+            original_report_id: id,
+            new_report_id: job.new_report_id,
+            version_number: job.version_number,
+            session_id: job.session_id,
+            created_at: job.created_at
           }
         }
       });

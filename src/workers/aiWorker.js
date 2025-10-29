@@ -111,6 +111,10 @@ class AIWorker {
           await this.processReportGenerationJob(job_id, session_id, payload);
           break;
         
+        case 'regenerate_report':
+          await this.processReportRegenerationJob(job_id, session_id, payload);
+          break;
+        
         default:
           throw new Error(`Unknown job type: ${job_type}`);
       }
@@ -388,6 +392,106 @@ class AIWorker {
 
       } catch (updateError) {
         console.error('Failed to update session after report generation error:', updateError);
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * Process report regeneration job
+   */
+  async processReportRegenerationJob(jobId, sessionId, payload) {
+    const { report_id, original_report_id, transcript, notes, report_type, session_context } = payload;
+
+    try {
+      // Get session info to find the user
+      const session = await SessionService.getSessionById(sessionId, null, 'admin');
+      const userId = session.adviser_id;
+
+      // Keep report in draft status during processing
+      // Note: Skipping status update as 'review' may not be valid in current DB schema
+
+      // Emit progress to user
+      socketService.sendToUser(userId, 'report_regeneration_started', {
+        sessionId,
+        jobId,
+        reportId: report_id,
+        originalReportId: original_report_id,
+        message: `Regenerating ${report_type} report with AI...`
+      });
+
+      // Generate new report with notes and session context
+      const regeneratedReport = await openaiService.generateReport(transcript, report_type, {
+        sessionContext: session_context,
+        notes: notes
+      });
+
+      console.log(`✅ Report regenerated for session ${sessionId}, report ${report_id}`);
+
+      // Update the new report with generated content
+      const contentString = typeof regeneratedReport.content === 'object' ? 
+        JSON.stringify(regeneratedReport.content) : 
+        regeneratedReport.content;
+
+      await ReportService.updateReport(report_id, {
+        content: contentString,
+        status: 'draft',
+        generation_metadata: {
+          ...regeneratedReport.metadata,
+          regeneration_notes: notes,
+          regenerated_at: new Date().toISOString(),
+          original_report_id: original_report_id
+        },
+        word_count: ReportService.countWords(contentString),
+        character_count: contentString.length
+      });
+
+      // Store result in job
+      await JobService.updateJob(jobId, {
+        result: {
+          regenerated_report: regeneratedReport,
+          report_id: report_id
+        }
+      });
+
+      // Emit completion to user
+      socketService.sendToUser(userId, 'report_regeneration_complete', {
+        sessionId,
+        jobId,
+        reportId: report_id,
+        originalReportId: original_report_id,
+        message: `${report_type} report regenerated successfully!`,
+        report: {
+          id: report_id,
+          content: regeneratedReport.content, // Send original object for immediate use
+          type: report_type,
+          status: 'draft'
+        }
+      });
+
+    } catch (error) {
+      console.error(`❌ Report regeneration failed for session ${sessionId}, report ${report_id}:`, error);
+      
+      // Keep report in draft status on error (no 'failed' status available)
+      try {
+        await ReportService.updateReportStatus(report_id, 'draft');
+        
+        const session = await SessionService.getSessionById(sessionId, null, 'admin');
+        const userId = session.adviser_id;
+
+        // Emit error to user
+        socketService.sendToUser(userId, 'report_regeneration_error', {
+          sessionId,
+          jobId,
+          reportId: report_id,
+          originalReportId: original_report_id,
+          message: 'Report regeneration failed',
+          error: error.message
+        });
+
+      } catch (updateError) {
+        console.error('Failed to update report after regeneration error:', updateError);
       }
 
       throw error;

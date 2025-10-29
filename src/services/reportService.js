@@ -16,7 +16,8 @@ class ReportService {
         key_points = [],
         generation_method = 'ai_generated',
         generation_metadata = {},
-        status = 'draft'
+        status = 'draft',
+        version_number = 1
       } = reportData;
 
       const { data, error } = await supabaseAdmin
@@ -32,7 +33,7 @@ class ReportService {
           generation_method,
           generation_metadata,
           status,
-          version_number: 1,
+          version_number,
           is_current_version: true,
           word_count: this.countWords(content),
           character_count: content.length
@@ -160,6 +161,39 @@ class ReportService {
   }
 
   /**
+   * Update report content and metadata
+   */
+  static async updateReport(reportId, updateData) {
+    try {
+      console.log(`📝 Updating report ${reportId} with data:`, Object.keys(updateData));
+      
+      const { data, error } = await supabaseAdmin
+        .from('reports')
+        .update({
+          ...updateData,
+          updated_at: new Date()
+        })
+        .eq('id', reportId)
+        .select();
+
+      if (error) {
+        throw new Error(`Failed to update report: ${error.message}`);
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error(`Report ${reportId} not found for update`);
+      }
+
+      console.log(`✅ Updated report ${reportId} successfully`);
+      return data[0]; // Return first (and should be only) result
+
+    } catch (error) {
+      console.error('Error updating report:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Update report status (e.g., approve, reject)
    */
   static async updateReportStatus(reportId, status, approvedBy = null, approvalNotes = null) {
@@ -179,14 +213,17 @@ class ReportService {
         .from('reports')
         .update(updateData)
         .eq('id', reportId)
-        .select()
-        .single();
+        .select();
 
       if (error) {
         throw new Error(`Failed to update report status: ${error.message}`);
       }
 
-      return data;
+      if (!data || data.length === 0) {
+        throw new Error(`Report ${reportId} not found for status update`);
+      }
+
+      return data[0];
 
     } catch (error) {
       console.error('Error updating report status:', error);
@@ -200,6 +237,132 @@ class ReportService {
   static countWords(text) {
     if (!text) return 0;
     return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+  }
+
+  /**
+   * Get report by ID
+   */
+  static async getReportById(reportId) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('reports')
+        .select('*')
+        .eq('id', reportId)
+        .eq('is_current_version', true)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return null; // Report not found
+        }
+        throw new Error(`Failed to get report: ${error.message}`);
+      }
+
+      return data;
+
+    } catch (error) {
+      console.error('Error getting report by ID:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Regenerate full report - creates new version and queues regeneration job
+   */
+  static async regenerateFullReport(reportId, notes, userId) {
+    const JobService = require('./jobService');
+    
+    try {
+      // Get the current report
+      const currentReport = await this.getReportById(reportId);
+      if (!currentReport) {
+        throw new Error('Report not found');
+      }
+
+      // Get the session to access transcript
+      const SessionService = require('./sessionService');
+      const session = await SessionService.getSessionById(currentReport.session_id, null, 'admin');
+      
+      if (!session || !session.transcription_text) {
+        throw new Error('Session transcript not found - cannot regenerate report');
+      }
+
+      // Mark current report as not current version
+      await supabaseAdmin
+        .from('reports')
+        .update({ is_current_version: false })
+        .eq('id', reportId);
+
+      // Get next version number (check ALL reports, not just current versions)
+      const { data: versionData } = await supabaseAdmin
+        .from('reports')
+        .select('version_number')
+        .eq('session_id', currentReport.session_id)
+        .eq('type', currentReport.type)
+        .order('version_number', { ascending: false })
+        .limit(1);
+
+      const nextVersion = (versionData?.[0]?.version_number || 0) + 1;
+      
+      console.log(`📊 Version calculation: Found max version ${versionData?.[0]?.version_number || 0}, creating version ${nextVersion}`);
+      console.log(`📊 Creating report version ${nextVersion} for session ${currentReport.session_id}, type ${currentReport.type}`);
+
+      // Create new report version (draft status)
+      const newReport = await this.createReport({
+        session_id: currentReport.session_id,
+        type: currentReport.type,
+        title: `${currentReport.type === 'adviser' ? 'Advisor' : 'Client'} Report v${nextVersion} - ${new Date().toLocaleDateString()}`,
+        content: '{}', // Placeholder content
+        status: 'draft', // Use valid status - will be updated during processing
+        version_number: nextVersion, // Pass the calculated version number
+        generation_metadata: {
+          regeneration_notes: notes,
+          regenerated_by: userId,
+          regenerated_at: new Date().toISOString(),
+          original_report_id: reportId
+        }
+      });
+
+      // Create regeneration job
+      const job = await JobService.createJob({
+        session_id: currentReport.session_id,
+        type: 'regenerate_report',
+        payload: {
+          report_id: newReport.id,
+          original_report_id: reportId,
+          transcript: session.transcription_text,
+          notes: notes,
+          report_type: currentReport.type,
+          session_context: {
+            sessionId: session.id,
+            clientName: session.client?.name,
+            clientEmail: session.client?.email,
+            businessDomain: session.client?.metadata?.business_domain,
+            adviserName: session.adviser?.name,
+            adviserEmail: session.adviser?.email,
+            sessionTitle: session.title,
+            sessionDate: session.created_at,
+            fileName: session.file_name,
+            duration: session.duration,
+            fileSize: session.file_size
+          }
+        },
+        priority: 9 // High priority for regeneration
+      });
+
+      console.log(`✅ Created regeneration job ${job.id} for report ${reportId} -> ${newReport.id}`);
+
+      return {
+        ...job,
+        new_report_id: newReport.id,
+        version_number: nextVersion,
+        session_id: currentReport.session_id
+      };
+
+    } catch (error) {
+      console.error('Error creating regeneration job:', error);
+      throw error;
+    }
   }
 
   /**

@@ -196,7 +196,7 @@ class OpenAIService {
    * Build prompt for report generation
    */
   buildReportPrompt(transcript, reportType, options = {}) {
-    const { sessionContext } = options;
+    const { sessionContext, notes } = options;
     
     // Build session information section
     let sessionInfo = '';
@@ -219,9 +219,28 @@ Session Information:
 `;
     }
 
+    // Build notes section if provided
+    let notesSection = '';
+    if (notes && notes.trim()) {
+      notesSection = `
+SPECIAL INSTRUCTIONS FROM ADVISER:
+${notes.trim()}
+
+IMPORTANT: Please take these instructions into account when generating the report.
+LANGUAGE PRESERVATION: Unless the instructions above specifically request a different language, maintain the same language as the original transcript. If the transcript is in Hebrew, generate the report in Hebrew. If in English, generate in English. Match the language exactly.
+
+`;
+    } else {
+      // Even without notes, add language preservation instruction
+      notesSection = `
+LANGUAGE PRESERVATION: Generate the report in the same language as the transcript. If the transcript is in Hebrew, write the report in Hebrew. If in English, write in English. Match the language exactly.
+
+`;
+    }
+
     const basePrompt = `Please analyze the following transcript and generate a comprehensive ${reportType} report.
 
-${sessionInfo}Transcript:
+${sessionInfo}${notesSection}Transcript:
 ${transcript}
 
 Please provide:
@@ -243,7 +262,7 @@ IMPORTANT ANALYSIS INSTRUCTIONS:
 
 `;
 
-    if (reportType === 'advisor') {
+    if (reportType === 'adviser' || reportType === 'advisor') {
       return basePrompt + `
 Generate a structured report with the following two levels:
 
@@ -320,7 +339,7 @@ Format the report professionally for client delivery.`;
   getSystemPrompt(reportType) {
     const baseSystem = "You are an AI assistant specialized in analyzing business conversations and generating professional reports. You can handle various types of audio content including meetings, consultations, presentations, and monologues. Always use the actual session information provided (client names, adviser names, dates, etc.) instead of generic placeholders like [Insert Name] or [Insert Date]. Be adaptive to the content type and provide valuable insights regardless of the conversation format. CRITICAL: Always respond in the same language as the transcript provided. If the transcript is in Hebrew, respond entirely in Hebrew. If in English, respond entirely in English. Match the language of the conversation exactly. IMPORTANT: You must respond with a valid JSON object only - no markdown, no additional text, just pure JSON.";
 
-    if (reportType === 'advisor') {
+    if (reportType === 'adviser' || reportType === 'advisor') {
       return baseSystem + " Generate detailed internal reports for business advisors with analytical insights and strategic recommendations. Include specific client details and personalize the report with actual names and information provided. Focus on actionable insights for the advisor. Return the response as a JSON object with the following structure: {\"level1_structure_display\": {\"key_metrics\": {\"word_count\": \"number\", \"speaker_count\": \"number\", \"engagement_score\": \"string\"}, \"main_topics\": [\"array of main discussion topics\"], \"conversation_summary\": {\"ai_summary\": \"string\", \"advisor_summary\": \"string\"}, \"general_sentiment\": \"string\"}, \"level2_insights_and_analysis\": {\"insights\": [{\"insight_title\": \"string\", \"description\": \"string\", \"entrepreneur_quote\": \"string\", \"insight_type\": \"opportunity|challenge|strength|concern\", \"confidence_level\": \"high|medium|low\", \"source\": \"transcript|context|inference\"}], \"recommendations\": [{\"recommendation_description\": \"string\", \"execution_target\": \"string\", \"priority\": \"high|medium|low\", \"domain\": \"marketing|finance|operations|strategy|other\", \"linked_insight_id\": \"number or null\"}]}}";
     } else if (reportType === 'client') {
       return baseSystem + " Generate client-facing reports that are clear, professional, and actionable for business clients. Use the client's actual name and business context throughout the report. Return the response as a JSON object with the following structure: {\"meeting_summary\": \"string\", \"key_points\": [\"array of strings\"], \"action_items\": [\"array of strings\"], \"next_steps\": [\"array of strings\"], \"decisions_made\": [\"array of strings\"], \"recommendations\": \"string\", \"follow_up_items\": [\"array of strings\"]}";
