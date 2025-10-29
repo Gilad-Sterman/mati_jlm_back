@@ -245,77 +245,60 @@ IMPORTANT ANALYSIS INSTRUCTIONS:
 
     if (reportType === 'advisor') {
       return basePrompt + `
-Additionally, please include these specific sections for advisor analysis:
+Generate a structured report with the following two levels:
 
-## Meeting Tone and Engagement Analysis
-- Overall tone of the conversation (excited, interested, hesitant, not interested, confused, etc.)
-- Client's level of engagement and enthusiasm
-- Any concerns or resistance detected
-- Energy level throughout the conversation
+## LEVEL 1 - STRUCTURE DISPLAY (Non-editable metrics)
+This section contains dry metrics and summary information:
 
-## Speaking Time Analysis
-Analyze the transcript carefully to identify speakers and estimate speaking time:
-- If speaker names are clearly mentioned (like "Tony said" or "Carrie responded"), calculate approximate percentage breakdown
-- Count the number of words/sentences each identified speaker contributed
-- Estimate speaking time percentages based on content length per speaker
-- If speakers cannot be clearly identified, note: "Speaker identification unclear from transcript format - unable to calculate precise percentages"
-- Identify who appears to be facilitating/leading the conversation
-- Note the balance between dialogue and monologue sections
-- For single-person recordings, indicate "Single speaker - 100%" and explain the context
+### Key Metrics
+- Estimate word count from transcript
+- Count number of speakers identified
+- Provide engagement score (high/medium/low) based on conversation analysis
 
-SPECIFIC ANALYSIS APPROACH for this transcript format:
-1. Look for direct name mentions and dialogue attribution (e.g., "Tony said", "Carrie responded")
-2. Identify conversation turns by analyzing question-answer patterns
-3. Count approximate word/sentence contributions per identified speaker
-4. Estimate percentages based on content length and speaking turns
-5. If precise calculation isn't possible, provide best estimates with clear disclaimers
+### Main Topics
+- Identify 3-5 main discussion topics from the conversation
+- Focus on business-relevant themes and subjects
 
-Example format:
-- Tony (Meeting Facilitator): ~40% - Led discussion, asked questions, guided agenda
-- Carrie (Marketing): ~35% - Provided detailed updates on marketing strategy  
-- Jason (Minutes): ~15% - Acknowledged tasks, brief responses
-- Other participants: ~10% - Brief contributions and agreements
+### Conversation Summary
+- ai_summary: Objective summary of what was discussed
+- advisor_summary: Strategic summary focusing on business implications
 
-If unable to calculate precise percentages, provide format like:
-- Tony: Dominant speaker - Facilitated meeting, asked most questions (~estimated 35-45%)
-- Carrie: Major contributor - Provided detailed marketing updates (~estimated 30-40%)
-- Jason: Moderate participation - Task acknowledgments and brief responses (~estimated 10-20%)
-- Others: Limited participation - Brief agreements and contributions (~estimated 5-15%)
+### General Sentiment
+- Overall emotional tone of the conversation (positive/neutral/negative/mixed)
 
-## Key Quotes and Insights
-Extract the most significant quotes from the transcript:
-- Select 3-5 direct quotes that reveal important insights
-- Include the actual quoted text in quotation marks
-- Identify the speaker if possible (e.g., "Tony stated:" or "As mentioned by Carrie:")
-- Explain what each quote reveals about priorities, concerns, or business direction
-- Focus on statements that show decision-making, strategic thinking, or key concerns
-- If timestamps are not available in the transcript, don't fabricate them
-- Note: If no meaningful quotes are available, explain why (e.g., "Limited dialogue due to monologue format")
+### Report Status
+- Set to "draft" for new reports
 
-Example format:
-1. **"Let's make this the next Red Bull energy drink"** (Speaker: Tony/Team) - Shows ambitious market positioning and competitive aspirations
-2. **"We need to give back to the community"** (Speaker: Tony) - Indicates strong commitment to corporate social responsibility
-3. **"We have decided to pitch the new ginger cola as a health and energy drink"** (Speaker: Carrie) - Reveals strategic product positioning decision
+## LEVEL 2 - INSIGHTS AND ANALYSIS (Editable advisor workspace)
+This section contains actionable insights and recommendations:
 
-## Professional Assessment
-- Client's readiness level for next steps
-- Potential challenges or objections identified
-- Opportunities for deeper engagement
-- Recommended approach for follow-up
+### Part A - Insights
+Generate 3-7 insight cards, each containing:
+- insight_title: Clear, descriptive title
+- description: Detailed explanation of the insight
+- entrepreneur_quote: Relevant quote from transcript (if available)
+- insight_type: Categorize as "opportunity", "challenge", "strength", or "concern"
+- confidence_level: "high", "medium", or "low" based on evidence strength
+- source: "transcript", "context", or "inference"
 
-Focus on:
-- Detailed analysis for internal use
-- Client insights and observations
-- Recommendations for follow-up
-- Areas requiring attention
-- Strategic considerations
+### Part B - Recommendations
+Generate 3-5 recommendation cards, each containing:
+- recommendation_description: Clear, actionable recommendation
+- execution_target: Timeline or target for implementation
+- priority: "high", "medium", or "low"
+- domain: "marketing", "finance", "operations", "strategy", or "other"
+- linked_insight_id: Reference to related insight (use array index, starting from 0)
 
-Fallback Instructions:
-- If the audio appears to be a monologue or presentation rather than a meeting, adapt your analysis to focus on the speaker's content, goals, and potential needs
-- If certain sections cannot be completed due to the nature of the recording, clearly state why and provide alternative insights
-- Always provide value even if the format differs from a typical business meeting
+## ANALYSIS INSTRUCTIONS:
+- Analyze conversation dynamics, speaker engagement, and business context
+- Extract meaningful quotes that support insights
+- Focus on actionable business intelligence
+- Identify opportunities, challenges, and strategic considerations
+- Ensure insights are specific and evidence-based
+- Link recommendations to specific insights where possible
+- Adapt analysis based on conversation type (meeting, consultation, presentation, etc.)
 
-Format the report professionally for advisor review using clear markdown sections.`;
+Generate all content in the same language as the transcript, but use English field names in the JSON structure.`;
     } else if (reportType === 'client') {
       return basePrompt + `
 Focus on:
@@ -338,7 +321,7 @@ Format the report professionally for client delivery.`;
     const baseSystem = "You are an AI assistant specialized in analyzing business conversations and generating professional reports. You can handle various types of audio content including meetings, consultations, presentations, and monologues. Always use the actual session information provided (client names, adviser names, dates, etc.) instead of generic placeholders like [Insert Name] or [Insert Date]. Be adaptive to the content type and provide valuable insights regardless of the conversation format. CRITICAL: Always respond in the same language as the transcript provided. If the transcript is in Hebrew, respond entirely in Hebrew. If in English, respond entirely in English. Match the language of the conversation exactly. IMPORTANT: You must respond with a valid JSON object only - no markdown, no additional text, just pure JSON.";
 
     if (reportType === 'advisor') {
-      return baseSystem + " Generate detailed internal reports for business advisors with analytical insights and strategic recommendations. Include specific client details and personalize the report with actual names and information provided. Focus on actionable insights for the advisor, including conversation dynamics, client psychology, and strategic recommendations. If the content is not a typical meeting format, adapt your analysis to still provide valuable business insights. Return the response as a JSON object with the following structure: {\"meeting_summary\": \"string\", \"key_points\": [\"array of strings\"], \"action_items\": [\"array of strings\"], \"next_steps\": [\"array of strings\"], \"decisions_made\": [\"array of strings\"], \"key_quotes\": [{\"speaker\": \"speaker name or role\", \"quote\": \"exact quote text\", \"context\": \"brief context\"}], \"client_psychology\": {\"overall_tone\": \"description\", \"engagement_level\": \"description\", \"energy_level\": \"description\", \"concerns_resistance\": \"description\", \"motivation_level\": \"description\", \"decision_making_style\": \"description\"}, \"strategic_recommendations\": \"string\", \"conversation_dynamics\": {\"speaker_count\": \"single|multiple\", \"single_speaker\": {\"speaking_style\": \"description\", \"content_flow\": \"description\", \"key_themes\": [\"themes\"]}, \"multiple_speakers\": {\"primary_speaker\": {\"name\": \"name\", \"role\": \"role\", \"speaking_time_percentage\": \"percentage\", \"communication_style\": \"description\"}, \"secondary_speaker\": {\"name\": \"name\", \"role\": \"role\", \"speaking_time_percentage\": \"percentage\", \"communication_style\": \"description\"}, \"interaction_quality\": \"description\", \"dialogue_balance\": \"description\"}}, \"client_concerns\": [\"array of strings\"], \"opportunities_identified\": [\"array of strings\"]}";
+      return baseSystem + " Generate detailed internal reports for business advisors with analytical insights and strategic recommendations. Include specific client details and personalize the report with actual names and information provided. Focus on actionable insights for the advisor. Return the response as a JSON object with the following structure: {\"level1_structure_display\": {\"key_metrics\": {\"word_count\": \"number\", \"speaker_count\": \"number\", \"engagement_score\": \"string\"}, \"main_topics\": [\"array of main discussion topics\"], \"conversation_summary\": {\"ai_summary\": \"string\", \"advisor_summary\": \"string\"}, \"general_sentiment\": \"string\"}, \"level2_insights_and_analysis\": {\"insights\": [{\"insight_title\": \"string\", \"description\": \"string\", \"entrepreneur_quote\": \"string\", \"insight_type\": \"opportunity|challenge|strength|concern\", \"confidence_level\": \"high|medium|low\", \"source\": \"transcript|context|inference\"}], \"recommendations\": [{\"recommendation_description\": \"string\", \"execution_target\": \"string\", \"priority\": \"high|medium|low\", \"domain\": \"marketing|finance|operations|strategy|other\", \"linked_insight_id\": \"number or null\"}]}}";
     } else if (reportType === 'client') {
       return baseSystem + " Generate client-facing reports that are clear, professional, and actionable for business clients. Use the client's actual name and business context throughout the report. Return the response as a JSON object with the following structure: {\"meeting_summary\": \"string\", \"key_points\": [\"array of strings\"], \"action_items\": [\"array of strings\"], \"next_steps\": [\"array of strings\"], \"decisions_made\": [\"array of strings\"], \"recommendations\": \"string\", \"follow_up_items\": [\"array of strings\"]}";
     }
