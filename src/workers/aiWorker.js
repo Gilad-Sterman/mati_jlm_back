@@ -291,41 +291,46 @@ class AIWorker {
       socketService.sendToUser(userId, 'report_generation_started', {
         sessionId,
         jobId,
-        message: 'Generating advisor report...'
+        message: 'Generating advisor and client reports...'
       });
 
-      // Generate advisor report with session context
+      // Generate both advisor and client reports with session context
+      const actualDuration = session.transcription_metadata?.duration || session.duration;
+      const sessionContext = {
+        sessionId: session.id,
+        clientName: session.client?.name || 'Unknown Client',
+        clientEmail: session.client?.email,
+        clientPhone: session.client?.phone,
+        businessDomain: session.client?.metadata?.business_domain,
+        adviserName: session.adviser?.name || 'Unknown Adviser',
+        adviserEmail: session.adviser?.email,
+        sessionTitle: session.title,
+        sessionDate: session.created_at,
+        fileName: session.file_name,
+        duration: actualDuration,
+        fileSize: session.file_size
+      };
+
       const advisorReport = await openaiService.generateReport(transcript, 'advisor', {
-        sessionContext: {
-          sessionId: session.id,
-          clientName: session.client?.name || 'Unknown Client',
-          clientEmail: session.client?.email,
-          clientPhone: session.client?.phone,
-          businessDomain: session.client?.metadata?.business_domain,
-          adviserName: session.adviser?.name || 'Unknown Adviser',
-          adviserEmail: session.adviser?.email,
-          sessionTitle: session.title,
-          sessionDate: session.created_at,
-          fileName: session.file_name,
-          duration: session.duration,
-          fileSize: session.file_size
-        }
+        sessionContext
       });
 
-      console.log(`✅ Advisor report generated for session ${sessionId}`);
+      const clientReport = await openaiService.generateReport(transcript, 'client', {
+        sessionContext
+      });
 
-      // Save advisor report to database (convert object to JSON string)
-      const contentString = typeof advisorReport.content === 'object' ? 
+      console.log(`✅ Both advisor and client reports generated for session ${sessionId}`);
+
+      // Save advisor report (Level 1 - non-editable metrics)
+      const advisorContentString = typeof advisorReport.content === 'object' ? 
         JSON.stringify(advisorReport.content) : 
         advisorReport.content;
-      
-      console.log('📄 Storing report content type:', typeof advisorReport.content);
       
       const savedAdvisorReport = await ReportService.createReport({
         session_id: sessionId,
         type: 'adviser',
         title: `Advisor Report - ${new Date().toLocaleDateString()}`,
-        content: contentString,
+        content: advisorContentString,
         generation_metadata: {
           model: advisorReport.metadata.model,
           tokens_used: advisorReport.metadata.tokens_used,
@@ -333,36 +338,67 @@ class AIWorker {
           generated_at: advisorReport.metadata.generated_at,
           mock_mode: advisorReport.metadata.mock_mode || false
         },
-        status: 'draft' // Report starts as draft for review
+        status: 'draft'
+      });
+
+      // Save client report (Level 2 - editable insights)
+      const clientContentString = typeof clientReport.content === 'object' ? 
+        JSON.stringify(clientReport.content) : 
+        clientReport.content;
+      
+      const savedClientReport = await ReportService.createReport({
+        session_id: sessionId,
+        type: 'client',
+        title: `Client Report - ${new Date().toLocaleDateString()}`,
+        content: clientContentString,
+        generation_metadata: {
+          model: clientReport.metadata.model,
+          tokens_used: clientReport.metadata.tokens_used,
+          processing_time_ms: clientReport.metadata.processing_time_ms,
+          generated_at: clientReport.metadata.generated_at,
+          mock_mode: clientReport.metadata.mock_mode || false
+        },
+        status: 'draft'
       });
 
       // Update session status and metadata
       await SessionService.updateSession(sessionId, {
-        status: 'advisor_report_generated',
+        status: 'reports_generated',
         processing_metadata: {
-          advisor_report_generation_completed_at: new Date().toISOString(),
+          reports_generation_completed_at: new Date().toISOString(),
           advisor_report_tokens: advisorReport.metadata.tokens_used,
-          advisor_report_id: savedAdvisorReport.id
+          client_report_tokens: clientReport.metadata.tokens_used,
+          advisor_report_id: savedAdvisorReport.id,
+          client_report_id: savedClientReport.id
         }
       }, userId, 'advisor');
 
       // Store results in job
       await JobService.updateJob(jobId, {
         result: {
-          advisor_report: advisorReport
+          advisor_report: advisorReport,
+          client_report: clientReport
         }
       });
 
       // Emit completion to user
-      socketService.sendToUser(userId, 'advisor_report_generated', {
+      socketService.sendToUser(userId, 'reports_generated', {
         sessionId,
         jobId,
-        message: 'Advisor report generated successfully!',
-        report: {
-          id: savedAdvisorReport.id,
-          content: advisorReport.content, // Send original object for immediate use
-          type: 'adviser',
-          status: 'draft'
+        message: 'Both advisor and client reports generated successfully!',
+        reports: {
+          advisor: {
+            id: savedAdvisorReport.id,
+            content: advisorReport.content,
+            type: 'adviser',
+            status: 'draft'
+          },
+          client: {
+            id: savedClientReport.id,
+            content: clientReport.content,
+            type: 'client',
+            status: 'draft'
+          }
         }
       });
 

@@ -264,70 +264,91 @@ IMPORTANT ANALYSIS INSTRUCTIONS:
 
     if (reportType === 'adviser' || reportType === 'advisor') {
       return basePrompt + `
-Generate a structured report with the following two levels:
+Generate a structured advisor report with conversation analysis and performance metrics:
 
-## LEVEL 1 - STRUCTURE DISPLAY (Non-editable metrics)
-This section contains dry metrics and summary information:
+## ADVISOR REPORT STRUCTURE
+Extract and analyze the following information from the transcript:
 
-### Key Metrics
-- Estimate word count from transcript
-- Count number of speakers identified
-- Provide engagement score (high/medium/low) based on conversation analysis
+### Speaking Time Analysis
+- advisor_speaking_percentage: Percentage of speaking time by the advisor
+- entrepreneur_speaking_percentage: Percentage of speaking time by the entrepreneur
+- conversation_duration: Use the "Meeting Duration" value from the Session Information section above (do not calculate, just copy the provided value)
 
-### Main Topics
-- Identify 3-5 main discussion topics from the conversation
-- Focus on business-relevant themes and subjects
+### Main Topics Tags
+- main_topics: Array of key topics that came up in the conversation (as tags/keywords)
 
-### Conversation Summary
-- ai_summary: Objective summary of what was discussed
-- advisor_summary: Strategic summary focusing on business implications
+### Points to Preserve
+- points_to_preserve: Analysis of what worked well in the conversation, including:
+  - demonstrations: Examples and demonstrations that were effective
+  - supporting_quotes: Direct quotes from the conversation that show these strengths
 
-### General Sentiment
-- Overall emotional tone of the conversation (positive/neutral/negative/mixed)
+### Points for Improvement
+- points_for_improvement: Analysis of areas for improvement, including:
+  - recommendations: What could have been done better in the conversation to encourage the entrepreneur to continue the process
+  - missed_opportunities: Important points that may have been missed in the conversation that should be emphasized
+  - supporting_quotes: Direct quotes that illustrate these improvement areas
 
-### Report Status
-- Set to "draft" for new reports
-
-## LEVEL 2 - INSIGHTS AND ANALYSIS (Editable advisor workspace)
-This section contains actionable insights and recommendations:
-
-### Part A - Insights
-Generate 3-7 insight cards, each containing:
-- insight_title: Clear, descriptive title
-- description: Detailed explanation of the insight
-- entrepreneur_quote: Relevant quote from transcript (if available)
-- insight_type: Categorize as "opportunity", "challenge", "strength", or "concern"
-- confidence_level: "high", "medium", or "low" based on evidence strength
-- source: "transcript", "context", or "inference"
-
-### Part B - Recommendations
-Generate 3-5 recommendation cards, each containing:
-- recommendation_description: Clear, actionable recommendation
-- execution_target: Timeline or target for implementation
-- priority: "high", "medium", or "low"
-- domain: "marketing", "finance", "operations", "strategy", or "other"
-- linked_insight_id: Reference to related insight (use array index, starting from 0)
+### Performance Scores
+- entrepreneur_readiness_score: Score from 1-100% based on these specific criteria:
+  * Business maturity and clarity of needs (25 points)
+  * Engagement level and active participation (25 points)
+  * Receptiveness to advice and solutions (25 points)
+  * Expressed interest in continuing the process (25 points)
+- advisor_performance_score: Score from 1-100% based on these specific criteria:
+  * Active listening and understanding of client needs (25 points)
+  * Quality and relevance of responses and advice (25 points)
+  * Ability to build rapport and trust (25 points)
+  * Effectiveness in presenting value proposition and next steps (25 points)
 
 ## ANALYSIS INSTRUCTIONS:
-- Analyze conversation dynamics, speaker engagement, and business context
-- Extract meaningful quotes that support insights
-- Focus on actionable business intelligence
-- Identify opportunities, challenges, and strategic considerations
-- Ensure insights are specific and evidence-based
-- Link recommendations to specific insights where possible
-- Adapt analysis based on conversation type (meeting, consultation, presentation, etc.)
+- Calculate speaking percentages based on conversation flow and speaker identification
+- Use the exact duration from the session context provided above
+- Extract actual quotes to support analysis points
+- For performance scores, evaluate each criterion objectively and sum the points (each criterion worth 25 points)
+- Base scores on evidence from the conversation, not assumptions
+- Provide specific examples and quotes to justify scoring decisions
+- Focus on actionable feedback for advisor improvement
+- This report serves as an internal evaluation document for advisor development
 
 Generate all content in the same language as the transcript, but use English field names in the JSON structure.`;
     } else if (reportType === 'client') {
       return basePrompt + `
-Focus on:
-- Clear, client-friendly language
-- Actionable next steps for the client
-- Summary of agreements and commitments
-- Positive and constructive tone
-- Professional presentation suitable for client delivery
+Generate a comprehensive client report based directly on the transcript content:
 
-Format the report professionally for client delivery.`;
+## CLIENT REPORT STRUCTURE
+Extract the following information directly from the transcript:
+
+### Executive Summary
+- executive_summary: Brief management summary reflecting the entrepreneur's current state and our opening point for diagnosis
+
+### Entrepreneur Needs Analysis
+- entrepreneur_needs: Summary of needs from the entrepreneur's side, including:
+  - need_conceptualization: Clear definition of the identified need
+  - need_explanation: Detailed explanation of the need
+  - supporting_quotes: Direct quotes from the conversation that support this need
+
+### Advisor Solutions and Recommendations
+- advisor_solutions: Summary of solutions, advice, and recommendations provided by the advisor, including:
+  - solution_conceptualization: Clear definition of the proposed solution
+  - solution_explanation: Detailed explanation of the solution/advice
+  - supporting_quotes: Direct quotes from the advisor in the conversation
+
+### Agreed Actions for Follow-up
+- agreed_actions: Concrete actions agreed upon for continuation, including:
+  - immediate_actions: Specific immediate actions to be taken
+  - concrete_recommendation: Specific recommendation for continuing the process with the advisory organization
+
+## EXTRACTION INSTRUCTIONS:
+- Extract information DIRECTLY from the transcript - do not infer or add information not present
+- Use actual quotes from the conversation to support each section
+- Identify who said what (entrepreneur vs advisor) based on context clues
+- Focus on concrete needs, solutions, and agreements mentioned in the conversation
+- Maintain the original meaning and context of statements
+- If information for a section is not available in the transcript, indicate this clearly
+- Use clear, professional language suitable for client delivery
+- This report serves as a working document for client consultation
+
+Generate all content in the same language as the transcript, but use English field names in the JSON structure.`;
     }
 
     return basePrompt;
@@ -340,9 +361,9 @@ Format the report professionally for client delivery.`;
     const baseSystem = "You are an AI assistant specialized in analyzing business conversations and generating professional reports. You can handle various types of audio content including meetings, consultations, presentations, and monologues. Always use the actual session information provided (client names, adviser names, dates, etc.) instead of generic placeholders like [Insert Name] or [Insert Date]. Be adaptive to the content type and provide valuable insights regardless of the conversation format. CRITICAL: Always respond in the same language as the transcript provided. If the transcript is in Hebrew, respond entirely in Hebrew. If in English, respond entirely in English. Match the language of the conversation exactly. IMPORTANT: You must respond with a valid JSON object only - no markdown, no additional text, just pure JSON.";
 
     if (reportType === 'adviser' || reportType === 'advisor') {
-      return baseSystem + " Generate detailed internal reports for business advisors with analytical insights and strategic recommendations. Include specific client details and personalize the report with actual names and information provided. Focus on actionable insights for the advisor. Return the response as a JSON object with the following structure: {\"level1_structure_display\": {\"key_metrics\": {\"word_count\": \"number\", \"speaker_count\": \"number\", \"engagement_score\": \"string\"}, \"main_topics\": [\"array of main discussion topics\"], \"conversation_summary\": {\"ai_summary\": \"string\", \"advisor_summary\": \"string\"}, \"general_sentiment\": \"string\"}, \"level2_insights_and_analysis\": {\"insights\": [{\"insight_title\": \"string\", \"description\": \"string\", \"entrepreneur_quote\": \"string\", \"insight_type\": \"opportunity|challenge|strength|concern\", \"confidence_level\": \"high|medium|low\", \"source\": \"transcript|context|inference\"}], \"recommendations\": [{\"recommendation_description\": \"string\", \"execution_target\": \"string\", \"priority\": \"high|medium|low\", \"domain\": \"marketing|finance|operations|strategy|other\", \"linked_insight_id\": \"number or null\"}]}}";
+      return baseSystem + " Generate advisor reports with conversation analysis and performance evaluation. Include specific client details and personalize the report with actual names and information provided. Focus on speaking time analysis, performance scores, and actionable feedback. Return the response as a JSON object with the following structure: {\"advisor_speaking_percentage\": \"number\", \"entrepreneur_speaking_percentage\": \"number\", \"conversation_duration\": \"string\", \"main_topics\": [\"array of topic tags\"], \"points_to_preserve\": {\"demonstrations\": [\"array of effective examples\"], \"supporting_quotes\": [\"array of quotes\"]}, \"points_for_improvement\": {\"recommendations\": [\"array of improvement suggestions\"], \"missed_opportunities\": [\"array of missed points\"], \"supporting_quotes\": [\"array of quotes\"]}, \"entrepreneur_readiness_score\": \"number\", \"advisor_performance_score\": \"number\"}";
     } else if (reportType === 'client') {
-      return baseSystem + " Generate client-facing reports that are clear, professional, and actionable for business clients. Use the client's actual name and business context throughout the report. Return the response as a JSON object with the following structure: {\"meeting_summary\": \"string\", \"key_points\": [\"array of strings\"], \"action_items\": [\"array of strings\"], \"next_steps\": [\"array of strings\"], \"decisions_made\": [\"array of strings\"], \"recommendations\": \"string\", \"follow_up_items\": [\"array of strings\"]}";
+      return baseSystem + " Generate client reports by extracting information directly from the transcript. Include specific client details and personalize the report with actual names and information provided. Focus on concrete information present in the conversation. Return the response as a JSON object with the following structure: {\"executive_summary\": \"string\", \"entrepreneur_needs\": {\"need_conceptualization\": \"string\", \"need_explanation\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]}, \"advisor_solutions\": {\"solution_conceptualization\": \"string\", \"solution_explanation\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]}, \"agreed_actions\": {\"immediate_actions\": [\"array of specific actions\"], \"concrete_recommendation\": \"string\"}}";
     }
 
     return baseSystem;
