@@ -257,6 +257,53 @@ class SessionController {
   }
 
   /**
+   * Get sessions with their reports for current user (optimized single query)
+   */
+  static async getSessionsWithReports(req, res) {
+    try {
+      const userId = req.user.id;
+      const userRole = req.user.role;
+      const { 
+        status, 
+        client_id, 
+        adviser_id, 
+        search_term,
+        sort_by,
+        sort_direction 
+      } = req.query;
+      const filters = {};
+      
+      if (status) filters.status = status;
+      if (client_id) filters.client_id = client_id;
+      if (adviser_id && userRole === 'admin') filters.adviser_id = adviser_id;
+      if (search_term) filters.search_term = search_term;
+      if (sort_by) filters.sort_by = sort_by;
+      if (sort_direction) filters.sort_direction = sort_direction;
+
+      const result = await SessionService.getSessionsWithReports(
+        userId, 
+        userRole, 
+        req.pagination,
+        filters
+      );
+
+      res.json({
+        success: true,
+        message: 'Sessions with reports retrieved successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Error getting sessions with reports:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
+  /**
    * Get sessions for current user
    */
   static async getSessions(req, res) {

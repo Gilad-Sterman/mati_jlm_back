@@ -310,6 +310,146 @@ class SessionService {
   }
 
   /**
+   * Get sessions with their associated reports in one optimized query
+   * with support for search, filtering, and sorting
+   */
+  static async getSessionsWithReports(userId, userRole, pagination = {}, filters = {}) {
+    try {
+      
+      const client = supabaseAdmin || supabase;
+      const { page = 1, limit = 20 } = pagination;
+      const { 
+        status, 
+        client_id, 
+        adviser_id, 
+        search_term,
+        sort_by = 'created_at',
+        sort_direction = 'desc'
+      } = filters;
+      const offset = (page - 1) * limit;
+
+      // Build the main query with reports joined
+      let query = client
+        .from('sessions')
+        .select(`
+          id, client_id, adviser_id, title, file_url, file_name, 
+          file_size, file_type, duration, status, created_at, updated_at, transcription_text,
+          client:clients(id, name, email, metadata),
+          adviser:users(id, name, email),
+          reports(
+            id, session_id, type, status, content, created_at, updated_at,
+            version_number, is_current_version
+          )
+        `);
+
+      // Role-based filtering
+      if (userRole === 'adviser') {
+        query = query.eq('adviser_id', userId);
+      }
+
+      // Apply filters
+      if (status) {
+        query = query.eq('status', status);
+      }
+      if (client_id) {
+        query = query.eq('client_id', client_id);
+      }
+      // Admin-only filter by adviser
+      if (adviser_id && userRole === 'admin') {
+        query = query.eq('adviser_id', adviser_id);
+      }
+      
+      // Search functionality
+      if (search_term && search_term.trim() !== '') {
+        const searchValue = search_term.trim();
+        
+        // Create a more complex query that handles joined table searches properly
+        // We'll use multiple queries and combine them
+        const searchQueries = [];
+        
+        // Search in main table fields
+        searchQueries.push(`title.ilike.%${searchValue}%`);
+        searchQueries.push(`file_name.ilike.%${searchValue}%`);
+        
+        // For now, let's just search in the main table to avoid the OR issue
+        // We can enhance this later with a different approach for joined tables
+        query = query.or(searchQueries.join(','));
+      }
+
+      // Get total count for pagination (same filtering logic)
+      let countQuery = client
+        .from('sessions')
+        .select('*', { count: 'exact', head: true });
+
+      if (userRole === 'adviser') {
+        countQuery = countQuery.eq('adviser_id', userId);
+      }
+      if (status) {
+        countQuery = countQuery.eq('status', status);
+      }
+      if (client_id) {
+        countQuery = countQuery.eq('client_id', client_id);
+      }
+      // Admin-only filter by adviser for count query
+      if (adviser_id && userRole === 'admin') {
+        countQuery = countQuery.eq('adviser_id', adviser_id);
+      }
+      
+      // Search functionality for count query (simplified version)
+      if (search_term && search_term.trim() !== '') {
+        const searchValue = search_term.trim();
+        countQuery = countQuery.or(
+          `title.ilike.%${searchValue}%,file_name.ilike.%${searchValue}%`
+        );
+        // Note: We can't search by client/adviser name in the count query
+        // because it doesn't have the joins, but that's ok for pagination purposes
+      }
+
+      const { count, error: countError } = await countQuery;
+      if (countError) throw countError;
+
+      // Apply sorting
+      const validSortFields = ['created_at', 'title', 'status', 'file_name'];
+      const sortField = validSortFields.includes(sort_by) ? sort_by : 'created_at';
+      const sortDir = sort_direction === 'asc' ? true : false;
+      
+      // Get sessions with reports and pagination
+      const { data: sessions, error } = await query
+        .order(sortField, { ascending: sortDir })
+        .range(offset, offset + limit - 1);
+
+      if (error) throw error;
+
+      // Process the data to organize reports by type and filter current versions
+      const processedSessions = sessions.map(session => ({
+        ...session,
+        reports: session.reports
+          ? session.reports
+              .filter(report => report.is_current_version) // Only current versions
+              .reduce((acc, report) => {
+                acc[report.type] = report;
+                return acc;
+              }, {})
+          : {}
+      }));
+
+      return {
+        sessions: processedSessions,
+        pagination: {
+          page,
+          limit,
+          total: count,
+          totalPages: Math.ceil(count / limit)
+        }
+      };
+
+    } catch (error) {
+      console.error('Error in getSessionsWithReports:', error);
+      throw new Error(error.message || 'Failed to get sessions with reports');
+    }
+  }
+
+  /**
    * Search sessions by title or client name
    */
   static async searchSessions(searchTerm, userId, userRole, limit = 20) {

@@ -11,6 +11,18 @@ const {
 } = require('../middleware/validation');
 
 /**
+ * @route   GET /api/sessions/with-reports
+ * @desc    Get all sessions with their reports in a single optimized query
+ * @access  Private (Admin or Adviser)
+ */
+router.get('/with-reports', 
+  authenticate, 
+  requireAdminOrAdviser, 
+  validatePagination, 
+  SessionController.getSessionsWithReports
+);
+
+/**
  * @route   GET /api/sessions
  * @desc    Get all sessions (admin) or own sessions (adviser)
  * @access  Private (Admin or Adviser)
