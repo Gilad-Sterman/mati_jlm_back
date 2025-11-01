@@ -213,8 +213,6 @@ class ReportController {
    */
   static async regenerateReport(req, res) {
     try {
-      console.log('🔄 Regenerate report endpoint hit:', req.params.id);
-      console.log('📝 Request body:', req.body);
       
       const { id } = req.params;
       const { notes } = req.body;

@@ -165,7 +165,6 @@ class ReportService {
    */
   static async updateReport(reportId, updateData) {
     try {
-      console.log(`📝 Updating report ${reportId} with data:`, Object.keys(updateData));
       
       const { data, error } = await supabaseAdmin
         .from('reports')
@@ -304,9 +303,6 @@ class ReportService {
 
       const nextVersion = (versionData?.[0]?.version_number || 0) + 1;
       
-      console.log(`📊 Version calculation: Found max version ${versionData?.[0]?.version_number || 0}, creating version ${nextVersion}`);
-      console.log(`📊 Creating report version ${nextVersion} for session ${currentReport.session_id}, type ${currentReport.type}`);
-
       // Create new report version (draft status)
       const newReport = await this.createReport({
         session_id: currentReport.session_id,
