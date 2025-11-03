@@ -264,7 +264,7 @@ IMPORTANT ANALYSIS INSTRUCTIONS:
 
     if (reportType === 'adviser' || reportType === 'advisor') {
       return basePrompt + `
-Generate a structured advisor report with conversation analysis and performance metrics:
+Generate a structured advisor report with conversation analysis and performance metrics - this report is meant to provide insight about the adviser performance to help the adviser improve their performance:
 
 ## ADVISOR REPORT STRUCTURE
 Extract and analyze the following information from the transcript:
@@ -277,16 +277,15 @@ Extract and analyze the following information from the transcript:
 ### Main Topics Tags
 - main_topics: Array of key topics that came up in the conversation (as tags/keywords)
 
-### Points to Preserve
-- points_to_preserve: Analysis of what worked well in the conversation, including:
-  - demonstrations: Examples and demonstrations that were effective
-  - supporting_quotes: Direct quotes from the conversation that show these strengths
+### Points to Preserve - remember to use the same language as the transcript for the actual content of the points to preserve
+- points_to_preserve: Analysis of what the adviser did well in the conversation - should be positive and flattering - but based on evidence from the conversation, not assumptions or generalizations should be a array where each item is an object that includes:
+  - "title": The title of the point
+  - "description": A description of the point
 
-### Points for Improvement
-- points_for_improvement: Analysis of areas for improvement, including:
+### Points for Improvement - remember to use the same language as the transcript for the actual content of the points to improve
+- points_for_improvement: Analysis of areas where the adviser could improve - this is meant to be constructive feedback to help the adviser improve their performance and should include:
   - recommendations: What could have been done better in the conversation to encourage the entrepreneur to continue the process
   - missed_opportunities: Important points that may have been missed in the conversation that should be emphasized
-  - supporting_quotes: Direct quotes that illustrate these improvement areas
 
 ### Performance Scores
 - entrepreneur_readiness_score: Score from 1-100% based on these specific criteria:
@@ -313,22 +312,22 @@ Extract and analyze the following information from the transcript:
 Generate all content in the same language as the transcript, but use English field names in the JSON structure.`;
     } else if (reportType === 'client') {
       return basePrompt + `
-Generate a comprehensive client report based directly on the transcript content:
+Generate a comprehensive client report based directly on the transcript content - this report will be sent to the client so the tone when regarding the client should always be positive and helpful:
 
 ## CLIENT REPORT STRUCTURE
 Extract the following information directly from the transcript:
 
 ### Executive Summary
-- executive_summary: Brief management summary reflecting the entrepreneur's current state and our opening point for diagnosis
+- executive_summary: Brief management summary reflecting the entrepreneur's current state and the general direction of the conversation, should be at least 3 sentences long, and should include some subtle flattering of the client - but in a proffesional way, and not too over the top.
 
 ### Entrepreneur Needs Analysis
-- entrepreneur_needs: Summary of needs from the entrepreneur's side, including:
+- entrepreneur_needs: this field should always return an array even if there is only one need, Summary of needs from the entrepreneur's side, this should be a list of sevral needs (if available) where each need should include:
   - need_conceptualization: Clear definition of the identified need
   - need_explanation: Detailed explanation of the need
   - supporting_quotes: Direct quotes from the conversation that support this need
 
 ### Advisor Solutions and Recommendations
-- advisor_solutions: Summary of solutions, advice, and recommendations provided by the advisor, including:
+- advisor_solutions: this field should always return an array even if there is only one solution, Summary of solutions, advice, and recommendations provided by the advisor, this should be a list of sevral solutions (if available) where each solution should include:
   - solution_conceptualization: Clear definition of the proposed solution
   - solution_explanation: Detailed explanation of the solution/advice
   - supporting_quotes: Direct quotes from the advisor in the conversation
@@ -361,9 +360,9 @@ Generate all content in the same language as the transcript, but use English fie
     const baseSystem = "You are an AI assistant specialized in analyzing business conversations and generating professional reports. You can handle various types of audio content including meetings, consultations, presentations, and monologues. Always use the actual session information provided (client names, adviser names, dates, etc.) instead of generic placeholders like [Insert Name] or [Insert Date]. Be adaptive to the content type and provide valuable insights regardless of the conversation format. CRITICAL: Always respond in the same language as the transcript provided. If the transcript is in Hebrew, respond entirely in Hebrew. If in English, respond entirely in English. Match the language of the conversation exactly. IMPORTANT: You must respond with a valid JSON object only - no markdown, no additional text, just pure JSON.";
 
     if (reportType === 'adviser' || reportType === 'advisor') {
-      return baseSystem + " Generate advisor reports with conversation analysis and performance evaluation. Include specific client details and personalize the report with actual names and information provided. Focus on speaking time analysis, performance scores, and actionable feedback. Return the response as a JSON object with the following structure: {\"advisor_speaking_percentage\": \"number\", \"entrepreneur_speaking_percentage\": \"number\", \"conversation_duration\": \"string\", \"main_topics\": [\"array of topic tags\"], \"points_to_preserve\": {\"demonstrations\": [\"array of effective examples\"], \"supporting_quotes\": [\"array of quotes\"]}, \"points_for_improvement\": {\"recommendations\": [\"array of improvement suggestions\"], \"missed_opportunities\": [\"array of missed points\"], \"supporting_quotes\": [\"array of quotes\"]}, \"entrepreneur_readiness_score\": \"number\", \"advisor_performance_score\": \"number\"}";
+      return baseSystem + " Generate advisor reports with conversation analysis and performance evaluation. Include specific client details and personalize the report with actual names and information provided. Focus on speaking time analysis, performance scores, and actionable feedback. Return the response as a JSON object with the following structure: {\"advisor_speaking_percentage\": \"number\", \"entrepreneur_speaking_percentage\": \"number\", \"conversation_duration\": \"string\", \"main_topics\": [\"array of topic tags\"], \"points_to_preserve\": [{\"title\": \"string\", \"description\": \"string\"}], \"points_for_improvement\": {\"recommendations\": [\"array of improvement suggestions\"], \"missed_opportunities\": [\"array of missed points\"], \"supporting_quotes\": [\"array of quotes\"]}, \"entrepreneur_readiness_score\": \"number\", \"advisor_performance_score\": \"number\"}";
     } else if (reportType === 'client') {
-      return baseSystem + " Generate client reports by extracting information directly from the transcript. Include specific client details and personalize the report with actual names and information provided. Focus on concrete information present in the conversation. Return the response as a JSON object with the following structure: {\"executive_summary\": \"string\", \"entrepreneur_needs\": {\"need_conceptualization\": \"string\", \"need_explanation\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]}, \"advisor_solutions\": {\"solution_conceptualization\": \"string\", \"solution_explanation\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]}, \"agreed_actions\": {\"immediate_actions\": [\"array of specific actions\"], \"concrete_recommendation\": \"string\"}}";
+      return baseSystem + " Generate client reports by extracting information directly from the transcript. Include specific client details and personalize the report with actual names and information provided. Focus on concrete information present in the conversation. Return the response as a JSON object with the following structure: {\"executive_summary\": \"string\", \"entrepreneur_needs\": [ {\"need_conceptualization\": \"string\", \"need_explanation\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]} ], \"advisor_solutions\": [ {\"solution_conceptualization\": \"string\", \"solution_explanation\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]} ], \"agreed_actions\": {\"immediate_actions\": [\"array of specific actions\"], \"concrete_recommendation\": [\"array of recommendations\"]}}";
     }
 
     return baseSystem;
