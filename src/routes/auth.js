@@ -14,6 +14,13 @@ const { validateLogin } = require('../middleware/validation');
 router.post('/login', validateLogin, AuthController.login);
 
 /**
+ * @route   POST /api/auth/register
+ * @desc    Register new adviser
+ * @access  Public
+ */
+router.post('/register', AuthController.register);
+
+/**
  * @route   POST /api/auth/refresh
  * @desc    Refresh access token
  * @access  Public

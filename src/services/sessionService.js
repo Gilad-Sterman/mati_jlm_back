@@ -648,8 +648,24 @@ class SessionService {
           : {}
       }));
 
+      // For admin users, also fetch all advisers and admins for the dropdown
+      let advisers = [];
+      if (userRole === 'admin') {
+        const { data: advisersData, error: advisersError } = await client
+          .from('users')
+          .select('id, name, email, role')
+          .in('role', ['adviser', 'admin'])
+          .eq('status', 'active')
+          .order('name');
+        
+        if (!advisersError && advisersData) {
+          advisers = advisersData;
+        }
+      }
+
       return {
         sessions: processedSessions,
+        advisers: advisers, // Include advisers for admin users
         pagination: {
           page,
           limit,

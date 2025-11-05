@@ -197,11 +197,10 @@ class AuthService {
    * Validate password strength
    */
   static validatePassword(password) {
-    const minLength = 8;
+    const minLength = 6;
     const hasUpperCase = /[A-Z]/.test(password);
     const hasLowerCase = /[a-z]/.test(password);
     const hasNumbers = /\d/.test(password);
-    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
 
     const errors = [];
 
@@ -219,10 +218,6 @@ class AuthService {
 
     if (!hasNumbers) {
       errors.push('Password must contain at least one number');
-    }
-
-    if (!hasSpecialChar) {
-      errors.push('Password must contain at least one special character');
     }
 
     return {

@@ -25,6 +25,63 @@ class AuthController {
   }
 
   /**
+   * Register new adviser
+   */
+  static async register(req, res) {
+    try {
+      const { email, name, password } = req.body;
+      
+      // Validate required fields
+      if (!email || !name || !password) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email, name, and password are required'
+        });
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid email format'
+        });
+      }
+
+      // Validate password strength
+      const passwordValidation = AuthService.validatePassword(password);
+      if (!passwordValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: 'Password does not meet requirements',
+          errors: passwordValidation.errors
+        });
+      }
+
+      const userService = require('../services/userService');
+      const user = await userService.createUser({
+        email,
+        name,
+        password,
+        role: 'adviser'
+      });
+      
+      res.status(201).json({
+        success: true,
+        message: 'Registration successful',
+        data: { user }
+      });
+      
+    } catch (error) {
+      const statusCode = error.message.includes('already exists') ? 409 : 400;
+      res.status(statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
    * Refresh access token
    */
   static async refreshToken(req, res) {
