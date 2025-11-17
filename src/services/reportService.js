@@ -231,6 +231,133 @@ class ReportService {
   }
 
   /**
+   * Export client report as PDF and update statuses
+   */
+  static async exportClientReport(reportId, exportedBy) {
+    try {
+      console.log(`📤 Starting export process for client report ${reportId}`);
+
+      // Get the report with session information
+      const { data: reportWithSession, error: reportError } = await supabaseAdmin
+        .from('reports')
+        .select(`
+          *,
+          session:sessions(
+            id, title, client_id, adviser_id, status,
+            client:clients(id, name, email, metadata)
+          )
+        `)
+        .eq('id', reportId)
+        .eq('is_current_version', true)
+        .single();
+
+      if (reportError || !reportWithSession) {
+        throw new Error(`Report not found: ${reportError?.message || 'Unknown error'}`);
+      }
+
+      const report = reportWithSession;
+      const session = report.session;
+
+      // Validate this is a client report
+      if (report.type !== 'client') {
+        throw new Error('Only client reports can be exported');
+      }
+
+      console.log(`📋 Exporting client report for session: ${session.title || session.id}`);
+
+      // Step 1: Update report status to 'approved' (marking it as finalized)
+      const approvedReport = await this.updateReportStatus(
+        reportId, 
+        'approved', 
+        exportedBy, 
+        'Report exported and sent to client'
+      );
+
+      // Step 2: Update session status to 'completed' (marking the entire workflow as done)
+      const { data: updatedSession, error: sessionError } = await supabaseAdmin
+        .from('sessions')
+        .update({
+          status: 'completed',
+          updated_at: new Date()
+        })
+        .eq('id', session.id)
+        .select(`
+          id, title, status, updated_at,
+          client:clients(id, name, email, metadata)
+        `)
+        .single();
+
+      if (sessionError) {
+        console.error('Failed to update session status:', sessionError);
+        throw new Error(`Failed to update session status: ${sessionError.message}`);
+      }
+
+      // Step 3: Also update the adviser report to 'approved' if it exists
+      try {
+        const { data: adviserReport, error: adviserError } = await supabaseAdmin
+          .from('reports')
+          .select('id')
+          .eq('session_id', session.id)
+          .eq('type', 'adviser')
+          .eq('is_current_version', true)
+          .single();
+
+        if (adviserReport && !adviserError) {
+          await this.updateReportStatus(
+            adviserReport.id, 
+            'approved', 
+            exportedBy, 
+            'Approved along with client report export'
+          );
+          console.log(`✅ Also approved adviser report: ${adviserReport.id}`);
+        }
+      } catch (adviserReportError) {
+        console.warn('Could not update adviser report status:', adviserReportError.message);
+        // Don't fail the export if adviser report update fails
+      }
+
+      console.log(`✅ Export process completed for report ${reportId}`);
+      console.log(`📧 Session ${session.id} marked as completed`);
+
+      // TODO: Future implementations (add these as separate services/functions):
+      // 
+      // Step 4: Generate PDF from report content
+      // const pdfBuffer = await PDFService.generateReportPDF(report, session);
+      // const pdfUrl = await CloudinaryService.uploadPDF(pdfBuffer, `client-report-${reportId}.pdf`);
+      //
+      // Step 5: Send email to client with PDF attachment
+      // await EmailService.sendClientReport({
+      //   clientEmail: session.client.email,
+      //   clientName: session.client.name,
+      //   reportTitle: report.title,
+      //   pdfUrl: pdfUrl,
+      //   sessionTitle: session.title
+      // });
+      //
+      // Step 6: Update external CRM system
+      // await CRMService.updateClientSession({
+      //   clientId: session.client_id,
+      //   sessionId: session.id,
+      //   status: 'completed',
+      //   reportUrl: pdfUrl,
+      //   completedAt: new Date()
+      // });
+
+      return {
+        report: approvedReport,
+        session: updatedSession,
+        pdf_generated: false, // TODO: Set to true when PDF generation is implemented
+        email_sent: false,    // TODO: Set to true when email sending is implemented
+        crm_updated: false    // TODO: Set to true when CRM integration is implemented
+      };
+
+    } catch (error) {
+      console.error('Error exporting client report:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Count words in text (simple implementation)
    */
   static countWords(text) {

@@ -58,6 +58,18 @@ router.post('/:id/regenerate',
 );
 
 /**
+ * @route   POST /api/reports/:id/export
+ * @desc    Export report as PDF and send to client
+ * @access  Private (Admin or own report)
+ */
+router.post('/:id/export', 
+  authenticate, 
+  requireAdminOrAdviser, 
+  validateUUIDParam('id'), 
+  ReportController.exportReport
+);
+
+/**
  * @route   GET /api/reports/:id
  * @desc    Get report by ID
  * @access  Private (Admin or own report)

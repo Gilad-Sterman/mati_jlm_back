@@ -341,8 +341,8 @@ class SessionService {
           const adviserData = adviserStats.get(adviserId);
           adviserData.totalSessions++;
           
-          // Count sessions with reports as "completed"
-          if (session.reports && session.reports.length > 0) {
+          // Count sessions with "completed" status as successful
+          if (session.status === 'completed') {
             adviserData.completedSessions++;
           }
 

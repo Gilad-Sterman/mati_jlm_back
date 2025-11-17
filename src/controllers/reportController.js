@@ -181,20 +181,30 @@ class ReportController {
         });
       }
 
-      // TODO: Implement actual report approval using ReportService
-      // const approvedReport = await ReportService.updateReportStatus(id, 'approved', user.id, approval_notes);
+      // Get the report to validate it exists
+      const report = await ReportService.getReportById(id);
+      if (!report) {
+        return res.status(404).json({
+          success: false,
+          message: 'Report not found'
+        });
+      }
+
+      // TODO: Add authorization check - user should own the session or be admin
+      
+      // Approve the report using ReportService
+      const approvedReport = await ReportService.updateReportStatus(
+        id, 
+        'approved', 
+        user.id, 
+        approval_notes || 'Report approved'
+      );
       
       res.json({
         success: true,
         message: 'Report approved successfully',
         data: {
-          report: {
-            id: id,
-            status: 'approved',
-            approved_by: user.id,
-            approved_at: new Date().toISOString(),
-            approval_notes: approval_notes
-          }
+          report: approvedReport
         }
       });
 
@@ -269,6 +279,70 @@ class ReportController {
       res.status(500).json({
         success: false,
         message: 'Failed to start report regeneration',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
+  /**
+   * Export report as PDF and send to client
+   */
+  static async exportReport(req, res) {
+    try {
+      const { id } = req.params;
+      const user = req.user;
+
+      // Basic validation
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Report ID is required'
+        });
+      }
+
+      // Get the report to validate it exists and get session info
+      const report = await ReportService.getReportById(id);
+      if (!report) {
+        return res.status(404).json({
+          success: false,
+          message: 'Report not found'
+        });
+      }
+
+      // Only allow export of client reports
+      if (report.type !== 'client') {
+        return res.status(400).json({
+          success: false,
+          message: 'Only client reports can be exported'
+        });
+      }
+
+      // TODO: Add authorization check - user should own the session or be admin
+      
+      // Start the export process
+      const exportResult = await ReportService.exportClientReport(id, user.id);
+      
+      res.json({
+        success: true,
+        message: 'Report export completed successfully',
+        data: {
+          report: exportResult.report,
+          session: exportResult.session,
+          export_metadata: {
+            exported_by: user.id,
+            exported_at: new Date().toISOString(),
+            pdf_generated: exportResult.pdf_generated,
+            email_sent: exportResult.email_sent,
+            crm_updated: exportResult.crm_updated
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Error exporting report:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to export report',
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
