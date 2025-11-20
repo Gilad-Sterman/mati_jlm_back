@@ -312,11 +312,13 @@ class AIWorker {
       };
 
       const advisorReport = await openaiService.generateReport(transcript, 'advisor', {
-        sessionContext
+        sessionContext,
+        language: session.transcription_metadata?.language
       });
 
       const clientReport = await openaiService.generateReport(transcript, 'client', {
-        sessionContext
+        sessionContext,
+        language: session.transcription_metadata?.language
       });
 
       console.log(`✅ Both advisor and client reports generated for session ${sessionId}`);
@@ -460,7 +462,8 @@ class AIWorker {
       // Generate new report with notes and session context
       const regeneratedReport = await openaiService.generateReport(transcript, report_type, {
         sessionContext: session_context,
-        notes: notes
+        notes: notes,
+        language: session.transcription_metadata?.language
       });
 
       console.log(`✅ Report regenerated for session ${sessionId}, report ${report_id}`);

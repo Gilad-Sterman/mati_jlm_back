@@ -196,7 +196,7 @@ class OpenAIService {
    * Build prompt for report generation
    */
   buildReportPrompt(transcript, reportType, options = {}) {
-    const { sessionContext, notes } = options;
+    const { sessionContext, notes, language } = options;
     
     // Build session information section
     let sessionInfo = '';
@@ -227,13 +227,22 @@ SPECIAL INSTRUCTIONS FROM ADVISER:
 ${notes.trim()}
 
 IMPORTANT: Please take these instructions into account when generating the report.
-LANGUAGE PRESERVATION: Unless the instructions above specifically request a different language, maintain the same language as the original transcript. If the transcript is in Hebrew, generate the report in Hebrew. If in English, generate in English. Match the language exactly.
+CRITICAL LANGUAGE REQUIREMENT: Unless the instructions above specifically request a different language, analyze the actual conversation content in the transcript and generate ALL report content in the SAME language as the conversation. If the conversation is in Hebrew, write ALL content in Hebrew. If the conversation is in English, write ALL content in English. IGNORE session metadata language - only follow the transcript conversation language.
 
 `;
     } else {
       // Even without notes, add language preservation instruction
+      const languageInstruction = language ? 
+        `DETECTED TRANSCRIPT LANGUAGE: ${language.toUpperCase()}` : 
+        'ANALYZE the transcript language carefully - look at the actual conversation content, not the session metadata';
+        
       notesSection = `
-LANGUAGE PRESERVATION: Generate the report in the same language as the transcript. If the transcript is in Hebrew, write the report in Hebrew. If in English, write in English. Match the language exactly.
+CRITICAL LANGUAGE REQUIREMENT: 
+- ${languageInstruction}
+- If the transcript conversation is in Hebrew, generate ALL report content in Hebrew
+- If the transcript conversation is in English, generate ALL report content in English
+- IGNORE the language of session metadata (client names, session titles, etc.) - only follow the transcript language
+- The field names in JSON must remain in English, but ALL content values must match the transcript language
 
 `;
     }
@@ -251,7 +260,7 @@ Please provide:
 5. Important Decisions Made
 
 IMPORTANT ANALYSIS INSTRUCTIONS:
-- CRITICAL: Generate the entire report in the same language as the transcript. If the transcript is in Hebrew, write the report in Hebrew. If in English, write in English. Match the language exactly.
+- CRITICAL LANGUAGE RULE: Analyze the actual conversation content in the transcript (not session metadata like names/titles). Generate ALL report content values in the SAME language as the conversation. Hebrew conversation = Hebrew content. English conversation = English content. JSON field names stay English.
 - CRITICAL: Respond ONLY with valid JSON. Do not include any markdown formatting, explanatory text, or content outside the JSON object.
 - Use the actual session information provided above instead of placeholders. Replace any [Insert X] placeholders with the real data provided.
 - Carefully read through the transcript to identify different speakers based on context clues, names mentioned, and conversation flow
@@ -312,40 +321,45 @@ Extract and analyze the following information from the transcript:
 Generate all content in the same language as the transcript, but use English field names in the JSON structure.`;
     } else if (reportType === 'client') {
       return basePrompt + `
-Generate a comprehensive client report based directly on the transcript content - this report will be sent to the client so the tone when regarding the client should always be positive and helpful:
+Generate a client report based directly on the transcript content - this report will be sent to the client so the tone should always be positive and helpful:
 
 ## CLIENT REPORT STRUCTURE
 Extract the following information directly from the transcript:
 
-### Executive Summary
-- executive_summary: Brief management summary reflecting the entrepreneur's current state and the general direction of the conversation, should be at least 3 sentences long, and should include some subtle flattering of the client - but in a proffesional way, and not too over the top.
+### Key Insights (3-5 insights)
+- key_insights: Array of 3-5 key insights from the meeting, where each insight must include:
+  - category: Must be exactly one of these predetermined categories:
+    * "what we learned about the clients business"
+    * "decisions made"
+    * "opportunities/risks or concerns that came up"
+  - content: The actual insight content extracted from the transcript
+  - supporting_quotes: Array of direct quotes from the conversation that support this insight
 
-### Entrepreneur Needs Analysis
-- entrepreneur_needs: this field should always return an array even if there is only one need, Summary of needs from the entrepreneur's side, this should be a list of sevral needs (if available) where each need should include:
-  - need_conceptualization: Clear definition of the identified need
-  - need_explanation: Detailed explanation of the need
-  - supporting_quotes: Direct quotes from the conversation that support this need
-
-### Advisor Solutions and Recommendations
-- advisor_solutions: this field should always return an array even if there is only one solution, Summary of solutions, advice, and recommendations provided by the advisor, this should be a list of sevral solutions (if available) where each solution should include:
-  - solution_conceptualization: Clear definition of the proposed solution
-  - solution_explanation: Detailed explanation of the solution/advice
-  - supporting_quotes: Direct quotes from the advisor in the conversation
-
-### Agreed Actions for Follow-up
-- agreed_actions: Concrete actions agreed upon for continuation, including:
-  - immediate_actions: Specific immediate actions to be taken
-  - concrete_recommendation: Specific recommendation for continuing the process with the advisory organization
+### Action Items
+- action_items: Array of concrete action items discussed in the meeting, where each action item must include:
+  - task: Description of the task to be completed
+  - owner: Who is responsible - must be one of: "client", "adviser", or specify other entity name
+  - deadline: When the task should be completed (extract from transcript or use null if not specified)
+  - status: Current status - must be one of: "open", "in progress", "completed"
 
 ## EXTRACTION INSTRUCTIONS:
-- Extract information DIRECTLY from the transcript - do not infer or add information not present
-- Use actual quotes from the conversation to support each section
-- Identify who said what (entrepreneur vs advisor) based on context clues
-- Focus on concrete needs, solutions, and agreements mentioned in the conversation
+- Extract information STRICTLY from the transcript - do not infer, speculate, or add information not explicitly present
+- Use actual quotes from the conversation to support insights
+- For action items, only include tasks that were explicitly discussed or agreed upon
+- If specific information is not available in the transcript, use null for that field
+- If no insights or action items are found, return empty arrays []
 - Maintain the original meaning and context of statements
-- If information for a section is not available in the transcript, indicate this clearly
 - Use clear, professional language suitable for client delivery
-- This report serves as a working document for client consultation
+- Categories must match exactly as specified above
+- Owner field should be specific - use actual names when mentioned or "client"/"adviser" as appropriate
+
+CRITICAL LANGUAGE REQUIREMENT FOR CLIENT REPORT:
+- ANALYZE the actual conversation content in the transcript to determine language
+- IGNORE session metadata language (client names, session titles, etc.)
+- If the conversation is in Hebrew, generate ALL content values in Hebrew
+- If the conversation is in English, generate ALL content values in English
+- JSON field names must remain in English for parsing
+- ALL content, insights, quotes, and action items must match the conversation language exactly
 
 Generate all content in the same language as the transcript, but use English field names in the JSON structure.`;
     }
@@ -357,12 +371,12 @@ Generate all content in the same language as the transcript, but use English fie
    * Get system prompt based on report type
    */
   getSystemPrompt(reportType) {
-    const baseSystem = "You are an AI assistant specialized in analyzing business conversations and generating professional reports. You can handle various types of audio content including meetings, consultations, presentations, and monologues. Always use the actual session information provided (client names, adviser names, dates, etc.) instead of generic placeholders like [Insert Name] or [Insert Date]. Be adaptive to the content type and provide valuable insights regardless of the conversation format. CRITICAL: Always respond in the same language as the transcript provided. If the transcript is in Hebrew, respond entirely in Hebrew. If in English, respond entirely in English. Match the language of the conversation exactly. IMPORTANT: You must respond with a valid JSON object only - no markdown, no additional text, just pure JSON.";
+    const baseSystem = "You are an AI assistant specialized in analyzing business conversations and generating professional reports. You can handle various types of audio content including meetings, consultations, presentations, and monologues. Always use the actual session information provided (client names, adviser names, dates, etc.) instead of generic placeholders like [Insert Name] or [Insert Date]. Be adaptive to the content type and provide valuable insights regardless of the conversation format. CRITICAL LANGUAGE RULE: Analyze the actual conversation language in the transcript content (ignore session metadata language). If the conversation is in Hebrew, generate ALL content values in Hebrew. If the conversation is in English, generate ALL content values in English. JSON field names must remain in English, but content values must match the conversation language exactly. IMPORTANT: You must respond with a valid JSON object only - no markdown, no additional text, just pure JSON.";
 
     if (reportType === 'adviser' || reportType === 'advisor') {
       return baseSystem + " Generate advisor reports with conversation analysis and performance evaluation. Include specific client details and personalize the report with actual names and information provided. Focus on speaking time analysis, performance scores, and actionable feedback. Return the response as a JSON object with the following structure: {\"advisor_speaking_percentage\": \"number\", \"entrepreneur_speaking_percentage\": \"number\", \"conversation_duration\": \"string\", \"main_topics\": [\"array of topic tags\"], \"points_to_preserve\": [{\"title\": \"string\", \"description\": \"string\"}], \"points_for_improvement\": {\"recommendations\": [\"array of improvement suggestions\"], \"missed_opportunities\": [\"array of missed points\"], \"supporting_quotes\": [\"array of quotes\"]}, \"entrepreneur_readiness_score\": \"number\", \"advisor_performance_score\": \"number\"}";
     } else if (reportType === 'client') {
-      return baseSystem + " Generate client reports by extracting information directly from the transcript. Include specific client details and personalize the report with actual names and information provided. Focus on concrete information present in the conversation. Return the response as a JSON object with the following structure: {\"executive_summary\": \"string\", \"entrepreneur_needs\": [ {\"need_conceptualization\": \"string\", \"need_explanation\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]} ], \"advisor_solutions\": [ {\"solution_conceptualization\": \"string\", \"solution_explanation\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]} ], \"agreed_actions\": {\"immediate_actions\": [\"array of specific actions\"], \"concrete_recommendation\": [\"array of recommendations\"]}}";
+      return baseSystem + " Generate client reports by extracting information directly from the transcript. Include specific client details and personalize the report with actual names and information provided. Focus STRICTLY on concrete information present in the conversation - do not infer or speculate. Return the response as a JSON object with the following structure: {\"key_insights\": [{\"category\": \"string (must be exactly one of: 'what we learned about the clients business', 'decisions made', 'opportunities/risks or concerns that came up')\", \"content\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]}], \"action_items\": [{\"task\": \"string\", \"owner\": \"string (client/adviser/other entity name)\", \"deadline\": \"string or null\", \"status\": \"string (open/in progress/completed)\"}]}";
     }
 
     return baseSystem;
