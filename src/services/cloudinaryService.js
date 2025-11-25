@@ -88,9 +88,63 @@ class CloudinaryService {
   }
 
   /**
-   * Upload temporary file to Cloudinary and clean up
+   * Get optimized upload options based on file type for compression
+   */
+  static getOptimizedUploadOptions(originalName, fileType, customOptions = {}) {
+    const timestamp = Date.now();
+    const sanitizedName = path.parse(originalName).name.replace(/[^a-zA-Z0-9]/g, '_');
+    const publicId = `${timestamp}_${sanitizedName}`;
+
+    // Base options
+    const baseOptions = {
+      folder: 'mati/recordings',
+      public_id: publicId,
+      quality: 'auto'
+    };
+
+    // Detect file type and apply appropriate compression
+    const isVideo = fileType && fileType.startsWith('video/');
+    const isAudio = fileType && fileType.startsWith('audio/');
+
+    if (isVideo) {
+      // For video files: extract audio only and compress to MP3
+      console.log(`🎥 Video detected → extracting audio`);
+      return {
+        ...baseOptions,
+        resource_type: 'video',
+        format: 'mp3',           // Convert video to audio-only MP3
+        bit_rate: '64k',         // Optimize bitrate for speech
+        quality: 'auto',         // Automatic quality optimization
+        flags: 'strip_profile'   // Remove metadata to reduce size
+      };
+    } else if (isAudio) {
+      // For audio files: compress and optimize aggressively
+      console.log(`🎵 Audio detected → compressing`);
+      return {
+        ...baseOptions,
+        resource_type: 'video',  // Cloudinary treats audio as 'video' resource type
+        format: 'mp3',           // Convert to MP3 for consistency and compression
+        bit_rate: '32k',         // More aggressive compression for speech (32k still good for voice)
+        quality: 'auto',         // Automatic quality optimization
+        flags: 'strip_profile'   // Remove metadata to reduce size
+      };
+    } else {
+      // Fallback for other file types
+      console.log(`📄 Other file type → standard upload`);
+      return {
+        ...baseOptions,
+        resource_type: 'auto',
+        fetch_format: 'auto'
+      };
+    }
+  }
+
+  /**
+   * Upload temporary file to Cloudinary with intelligent compression
    */
   static async uploadTempFile(tempFilePath, originalName, options = {}) {
+    let uploadOptions = null; // Declare outside try block for error logging
+    
     try {
       // Check if Cloudinary is configured
       const configStatus = this.getConfigStatus();
@@ -98,23 +152,38 @@ class CloudinaryService {
         throw new Error(`Cloudinary not configured. Missing: ${configStatus.missing.join(', ')}`);
       }
 
-      // Generate unique public_id
-      const timestamp = Date.now();
-      const sanitizedName = path.parse(originalName).name.replace(/[^a-zA-Z0-9]/g, '_');
-      const publicId = `${timestamp}_${sanitizedName}`;
-
-      const defaultOptions = {
-        folder: 'mati/recordings',
-        resource_type: 'auto',
-        quality: 'auto',
-        fetch_format: 'auto',
-        public_id: publicId
+      // Get file stats for logging
+      const stats = fs.statSync(tempFilePath);
+      const originalSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+      
+      // Detect file type from the temporary file if not provided in options
+      const fileType = options.fileType || this.detectFileType(tempFilePath);
+      
+      // Get optimized upload options based on file type
+      const optimizedOptions = this.getOptimizedUploadOptions(originalName, fileType, options);
+      
+      // Merge with any custom options (custom options take precedence)
+      uploadOptions = { 
+        ...optimizedOptions, 
+        ...options,
+        timeout: 120000  // 2 minutes timeout for large files
       };
 
-      const uploadOptions = { ...defaultOptions, ...options };
+      console.log(`📤 Uploading ${originalName} (${originalSizeMB}MB) → MP3 ${uploadOptions.bit_rate} compression`);
+
+      // Warn about very large files
+      if (parseFloat(originalSizeMB) > 20) {
+        console.log(`⏳ Large file processing - this may take 1-2 minutes...`);
+      }
       
       
       const result = await cloudinary.uploader.upload(tempFilePath, uploadOptions);
+      
+      // Log compression results
+      const compressedSizeMB = (result.bytes / (1024 * 1024)).toFixed(2);
+      const compressionRatio = ((1 - (result.bytes / stats.size)) * 100).toFixed(1);
+      
+      console.log(`✅ Compressed: ${originalSizeMB}MB → ${compressedSizeMB}MB (${compressionRatio}% reduction) | ${result.duration ? Math.round(result.duration/60) + 'min' : 'N/A'}`);
       
       // Clean up temporary file
       try {
@@ -136,10 +205,21 @@ class CloudinaryService {
           width: result.width, // For video files
           height: result.height, // For video files
           created_at: result.created_at,
-          original_filename: originalName
+          original_filename: originalName,
+          // Add compression metadata
+          compression_info: {
+            original_size_mb: parseFloat(originalSizeMB),
+            compressed_size_mb: parseFloat(compressedSizeMB),
+            compression_ratio_percent: parseFloat(compressionRatio),
+            original_format: path.extname(originalName).toLowerCase(),
+            compressed_format: result.format
+          }
         }
       };
     } catch (error) {
+      console.error(`❌ Cloudinary upload failed for ${originalName}:`, error);
+      console.error('Upload options used:', uploadOptions);
+      
       // Clean up temporary file on error
       try {
         fs.unlinkSync(tempFilePath);
@@ -362,6 +442,26 @@ class CloudinaryService {
         success: false,
         error: error.message
       };
+    }
+  }
+
+  /**
+   * Detect file type from file path extension
+   */
+  static detectFileType(filePath) {
+    const extension = path.extname(filePath).toLowerCase();
+    
+    // Audio file extensions
+    const audioExtensions = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.wma'];
+    // Video file extensions  
+    const videoExtensions = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv', '.m4v'];
+    
+    if (audioExtensions.includes(extension)) {
+      return `audio/${extension.slice(1)}`; // Remove the dot
+    } else if (videoExtensions.includes(extension)) {
+      return `video/${extension.slice(1)}`; // Remove the dot
+    } else {
+      return 'application/octet-stream'; // Default fallback
     }
   }
 }

@@ -163,12 +163,20 @@ class SessionController {
         message: 'Preparing file for upload...'
       });
 
-      // Upload file to Cloudinary
+      // Upload file to Cloudinary with compression
       const uploadResult = await CloudinaryService.uploadTempFile(
         file.path,
         actualFileName,
-        { folder: 'mati/sessions' }
+        { 
+          folder: 'mati/sessions',
+          fileType: file.mimetype  // Pass the MIME type for intelligent compression
+        }
       );
+
+      // Check if upload was successful
+      if (!uploadResult.success) {
+        throw new Error(`Cloudinary upload failed: ${uploadResult.error}`);
+      }
 
       // Emit progress update
       socketService.sendToUser(userId, 'upload_progress', {
@@ -184,7 +192,8 @@ class SessionController {
         duration: uploadResult.data.duration ? Math.round(uploadResult.data.duration) : null,
         processing_metadata: {
           cloudinary_public_id: uploadResult.data.public_id,
-          upload_completed_at: new Date().toISOString()
+          upload_completed_at: new Date().toISOString(),
+          compression_info: uploadResult.data.compression_info // Store compression stats
         }
       };
 

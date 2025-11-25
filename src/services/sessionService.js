@@ -357,9 +357,22 @@ class SessionService {
                     : report.content;
 
                   if (report.type === 'adviser' && content) {
-                    // Extract adviser performance score (based on OpenAI service structure)
+                    // Extract adviser performance score - handle both new and legacy structures
                     let advisorScore = null;
-                    if (content.advisor_performance_score) {
+                    
+                    // NEW STRUCTURE: Calculate average from listening, clarity, continuation scores (0-5 scale)
+                    if (content.listening?.score && content.clarity?.score && content.continuation?.score) {
+                      const listeningScore = parseFloat(content.listening.score);
+                      const clarityScore = parseFloat(content.clarity.score);
+                      const continuationScore = parseFloat(content.continuation.score);
+                      
+                      if (!isNaN(listeningScore) && !isNaN(clarityScore) && !isNaN(continuationScore)) {
+                        // Convert from 0-5 scale to 0-100 scale
+                        advisorScore = ((listeningScore + clarityScore + continuationScore) / 3) * 20;
+                      }
+                    }
+                    // LEGACY STRUCTURE: Direct advisor_performance_score
+                    else if (content.advisor_performance_score) {
                       advisorScore = parseFloat(content.advisor_performance_score);
                     }
 
@@ -368,9 +381,15 @@ class SessionService {
                       totalAdvisorScores.push(advisorScore);
                     }
 
-                    // Extract entrepreneur readiness score
+                    // Extract entrepreneur/client readiness score - handle both structures
                     let entrepreneurScore = null;
-                    if (content.entrepreneur_readiness_score) {
+                    
+                    // NEW STRUCTURE: client_readiness_score
+                    if (content.client_readiness_score) {
+                      entrepreneurScore = parseFloat(content.client_readiness_score);
+                    }
+                    // LEGACY STRUCTURE: entrepreneur_readiness_score
+                    else if (content.entrepreneur_readiness_score) {
                       entrepreneurScore = parseFloat(content.entrepreneur_readiness_score);
                     }
 
@@ -441,10 +460,28 @@ class SessionService {
                   ? JSON.parse(adviserReport.content) 
                   : adviserReport.content;
 
-                if (content.advisor_performance_score) {
+                // Extract advisor score - handle both new and legacy structures
+                if (content.listening?.score && content.clarity?.score && content.continuation?.score) {
+                  const listeningScore = parseFloat(content.listening.score);
+                  const clarityScore = parseFloat(content.clarity.score);
+                  const continuationScore = parseFloat(content.continuation.score);
+                  
+                  if (!isNaN(listeningScore) && !isNaN(clarityScore) && !isNaN(continuationScore)) {
+                    // Convert from 0-5 scale to 0-100 scale
+                    advisorScore = ((listeningScore + clarityScore + continuationScore) / 3) * 20;
+                  }
+                }
+                // LEGACY STRUCTURE: Direct advisor_performance_score
+                else if (content.advisor_performance_score) {
                   advisorScore = parseFloat(content.advisor_performance_score);
                 }
-                if (content.entrepreneur_readiness_score) {
+
+                // Extract entrepreneur/client readiness score - handle both structures
+                if (content.client_readiness_score) {
+                  entrepreneurScore = parseFloat(content.client_readiness_score);
+                }
+                // LEGACY STRUCTURE: entrepreneur_readiness_score
+                else if (content.entrepreneur_readiness_score) {
                   entrepreneurScore = parseFloat(content.entrepreneur_readiness_score);
                 }
                 if (content.conversation_duration) {

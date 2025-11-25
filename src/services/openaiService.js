@@ -75,7 +75,9 @@ class OpenAIService {
       const fileSizeInMB = stats.size / (1024 * 1024);
 
       if (fileSizeInMB > 25) {
-        throw new Error(`File size (${fileSizeInMB.toFixed(2)}MB) exceeds OpenAI's 25MB limit`);
+        console.log(`⚠️ File size (${fileSizeInMB.toFixed(2)}MB) exceeds 25MB limit. Implementing chunking solution...`);
+        // For now, we'll implement a simple fallback - in the future, add FFmpeg chunking here
+        throw new Error(`File size (${fileSizeInMB.toFixed(2)}MB) exceeds OpenAI's 25MB limit. Please implement chunking solution for files this large.`);
       }
 
       // Prepare transcription options
