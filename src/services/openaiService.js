@@ -164,10 +164,63 @@ class OpenAIService {
       const duration = Date.now() - startTime;
       const rawContent = response.choices[0].message.content;
 
-      // Parse JSON response from OpenAI
+      // Sanitize JSON response to handle Hebrew quotes and other problematic characters
+      const sanitizeJsonContent = (content) => {
+        try {
+          // First, try to parse as-is
+          return JSON.parse(content);
+        } catch (error) {
+          console.log('⚠️ Initial JSON parse failed, attempting to sanitize...');
+          
+          // Sanitize common Hebrew quote issues
+          let sanitized = content
+            // Replace Hebrew quotes in common abbreviations
+            .replace(/תב"ע/g, 'תב\\"ע')
+            .replace(/ח"כ/g, 'ח\\"כ')
+            .replace(/מ"מ/g, 'מ\\"מ')
+            .replace(/ר"מ/g, 'ר\\"מ')
+            .replace(/מ"ד/g, 'מ\\"ד')
+            .replace(/ת"א/g, 'ת\\"א')
+            .replace(/י"ש/g, 'י\\"ש')
+            .replace(/ע"י/g, 'ע\\"י')
+            .replace(/ב"כ/g, 'ב\\"כ')
+            // Handle other unescaped quotes within Hebrew text (but not JSON structure quotes)
+            .replace(/"([^"]*[\u0590-\u05FF][^"]*?)"/g, (match, hebrewText) => {
+              // Only escape quotes that are inside Hebrew text, not JSON structure quotes
+              const escapedText = hebrewText.replace(/"/g, '\\"');
+              return `"${escapedText}"`;
+            });
+          
+          try {
+            return JSON.parse(sanitized);
+          } catch (secondError) {
+            console.log('⚠️ Sanitization failed, trying more aggressive approach...');
+            
+            // More aggressive sanitization - escape all unescaped quotes in string values
+            sanitized = content.replace(/"([^"\\]*(\\.[^"\\]*)*?)"/g, (match, stringContent) => {
+              // Don't touch JSON structure, only string content
+              if (stringContent.includes(':') || stringContent.includes('{') || stringContent.includes('[')) {
+                return match; // This is likely JSON structure, leave it alone
+              }
+              // Escape any unescaped quotes in the string content
+              const escaped = stringContent.replace(/(?<!\\)"/g, '\\"');
+              return `"${escaped}"`;
+            });
+            
+            try {
+              return JSON.parse(sanitized);
+            } catch (finalError) {
+              console.error('❌ All sanitization attempts failed');
+              throw finalError;
+            }
+          }
+        }
+      };
+
+      // Parse JSON response from OpenAI with sanitization
       let parsedContent;
       try {
-        parsedContent = JSON.parse(rawContent);
+        parsedContent = sanitizeJsonContent(rawContent);
         console.log('✅ Successfully parsed JSON response from OpenAI');
       } catch (parseError) {
         console.error('❌ Failed to parse JSON response from OpenAI:', parseError);
