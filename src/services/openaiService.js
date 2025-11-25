@@ -73,7 +73,7 @@ class OpenAIService {
       // Check file size (Whisper has 25MB limit)
       const stats = fs.statSync(tempFilePath);
       const fileSizeInMB = stats.size / (1024 * 1024);
-      
+
       if (fileSizeInMB > 25) {
         throw new Error(`File size (${fileSizeInMB.toFixed(2)}MB) exceeds OpenAI's 25MB limit`);
       }
@@ -114,7 +114,7 @@ class OpenAIService {
 
     } catch (error) {
       console.error('Error transcribing audio:', error);
-      
+
       // Handle specific OpenAI errors
       if (error.code === 'invalid_request_error') {
         throw new Error(`OpenAI API Error: ${error.message}`);
@@ -140,7 +140,7 @@ class OpenAIService {
   async generateReport(transcript, reportType, options = {}) {
     try {
       const prompt = this.buildReportPrompt(transcript, reportType, options);
-      
+
       const startTime = Date.now();
 
       const response = await this.openai.chat.completions.create({
@@ -197,13 +197,13 @@ class OpenAIService {
    */
   buildReportPrompt(transcript, reportType, options = {}) {
     const { sessionContext, notes, language } = options;
-    
+
     // Build session information section
     let sessionInfo = '';
     if (sessionContext) {
       const sessionDate = sessionContext.sessionDate ? new Date(sessionContext.sessionDate).toLocaleDateString('he-IL') : '[Insert Date]';
       const duration = sessionContext.duration ? `${Math.floor(sessionContext.duration / 60)}:${(sessionContext.duration % 60).toString().padStart(2, '0')}` : '[Unknown Duration]';
-      
+
       sessionInfo = `
 Session Information:
 - Meeting Date: ${sessionDate}
@@ -232,10 +232,10 @@ CRITICAL LANGUAGE REQUIREMENT: Unless the instructions above specifically reques
 `;
     } else {
       // Even without notes, add language preservation instruction
-      const languageInstruction = language ? 
-        `DETECTED TRANSCRIPT LANGUAGE: ${language.toUpperCase()}` : 
+      const languageInstruction = language ?
+        `DETECTED TRANSCRIPT LANGUAGE: ${language.toUpperCase()}` :
         'ANALYZE the transcript language carefully - look at the actual conversation content, not the session metadata';
-        
+
       notesSection = `
 CRITICAL LANGUAGE REQUIREMENT: 
 - ${languageInstruction}
@@ -252,12 +252,6 @@ CRITICAL LANGUAGE REQUIREMENT:
 ${sessionInfo}${notesSection}Transcript:
 ${transcript}
 
-Please provide:
-1. Meeting Summary
-2. Key Discussion Points
-3. Action Items
-4. Next Steps
-5. Important Decisions Made
 
 IMPORTANT ANALYSIS INSTRUCTIONS:
 - CRITICAL LANGUAGE RULE: Analyze the actual conversation content in the transcript (not session metadata like names/titles). Generate ALL report content values in the SAME language as the conversation. Hebrew conversation = Hebrew content. English conversation = English content. JSON field names stay English.
@@ -276,49 +270,66 @@ IMPORTANT ANALYSIS INSTRUCTIONS:
 Generate a structured advisor report with conversation analysis and performance metrics - this report is meant to provide insight about the adviser performance to help the adviser improve their performance:
 
 ## ADVISOR REPORT STRUCTURE
-Extract and analyze the following information from the transcript:
 
-### Speaking Time Analysis
-- advisor_speaking_percentage: Percentage of speaking time by the advisor
-- entrepreneur_speaking_percentage: Percentage of speaking time by the entrepreneur
-- conversation_duration: Use the "Meeting Duration" value from the Session Information section above (do not calculate, just copy the provided value)
+The report should contain 4 main sections with the following structure:
 
-### Main Topics Tags
-- main_topics: Array of key topics that came up in the conversation (as tags/keywords)
-
-### Points to Preserve - remember to use the same language as the transcript for the actual content of the points to preserve
-- points_to_preserve: Analysis of what the adviser did well in the conversation - should be positive and flattering - but based on evidence from the conversation, not assumptions or generalizations should be a array where each item is an object that includes:
-  - "title": The title of the point
-  - "description": A description of the point
-
-### Points for Improvement - remember to use the same language as the transcript for the actual content of the points to improve
-- points_for_improvement: Analysis of areas where the adviser could improve - this is meant to be constructive feedback to help the adviser improve their performance and should include:
-  - recommendations: What could have been done better in the conversation to encourage the entrepreneur to continue the process
-  - missed_opportunities: Important points that may have been missed in the conversation that should be emphasized
-
-### Performance Scores
-- entrepreneur_readiness_score: Score from 1-100% based on these specific criteria:
+### 1. GENERAL PERFORMANCE
+- topics_covered: Object containing breakdown of conversation time spent on different phases:
+  * introducing_advisor_percentage: Percentage of time spent introducing the advisor
+  * introducing_mati_percentage: Percentage of time spent introducing MATI (the advisor's company)
+  * opening_percentage: Percentage of time spent on opening/rapport building
+  * collecting_info_percentage: Percentage of time spent collecting information about the client
+  * actual_content_percentage: Percentage of time spent on actual consulting/advice content
+  
+- client_readiness_score: Score from 0-100 based on these specific criteria:
   * Business maturity and clarity of needs (25 points)
   * Engagement level and active participation (25 points)
   * Receptiveness to advice and solutions (25 points)
   * Expressed interest in continuing the process (25 points)
-- advisor_performance_score: Score from 1-100% based on these specific criteria:
-  * Active listening and understanding of client needs (25 points)
-  * Quality and relevance of responses and advice (25 points)
-  * Ability to build rapport and trust (25 points)
-  * Effectiveness in presenting value proposition and next steps (25 points)
+
+### 2. ADVISOR QUALITY METRICS
+This section should contain 3 subsections, each with score (0-5), description, and supporting quote:
+
+- listening: Object containing:
+  * score: Rating from 0-5 stars
+  * description: Analysis of the advisor's ability to ask good questions, build trust, and get the entrepreneur to share challenges, needs, and opportunities in their business. Focus on listening approach and engagement techniques.
+  * supporting_quote: Specific quote from the transcript that demonstrates this skill
+  
+- clarity: Object containing:
+  * score: Rating from 0-5 stars
+  * description: Analysis of the advisor's ability to reflect, frame, and map where the entrepreneur is in a non-judgmental way, and create insights and understanding for effective and practical action directions for the entrepreneur and business growth.
+  * supporting_quote: Specific quote from the transcript that demonstrates this skill
+  
+- continuation: Object containing:
+  * score: Rating from 0-5 stars
+  * description: Analysis of the advisor's success in finding the right words to describe MATI's relevant services and their value for this specific entrepreneur and their needs, using the entrepreneur's own language and words to motivate them to action, consume services, and continue collaboration with MATI.
+  * supporting_quote: Specific quote from the transcript that demonstrates this skill
+
+### 3. THINGS TO PRESERVE
+- things_to_preserve: Array of positive aspects the advisor did well, where each item includes:
+  * title: Brief title of the positive point
+  * description: Detailed explanation of what the advisor did well, based on evidence from the conversation
+
+### 4. NEEDS IMPROVEMENT
+- needs_improvement: Array of areas where the advisor could improve, where each item includes:
+  * title: Brief title of the improvement area
+  * description: Detailed explanation of what could be improved and constructive suggestions
 
 ## ANALYSIS INSTRUCTIONS:
-- Calculate speaking percentages based on conversation flow and speaker identification
-- Use the exact duration from the session context provided above
-- Extract actual quotes to support analysis points
-- For performance scores, evaluate each criterion objectively and sum the points (each criterion worth 25 points)
-- Base scores on evidence from the conversation, not assumptions
-- Provide specific examples and quotes to justify scoring decisions
-- Focus on actionable feedback for advisor improvement
+- Calculate percentage breakdowns based on actual conversation flow and time spent on each phase
+- Analyze the full transcript to understand conversation structure and phases
+- For the quality metrics (Listening, Clarity, Continuation), provide honest scores from 0-5 based on evidence
+- Select the MOST relevant and representative quotes that best demonstrate each quality metric
+- Quotes should be substantial enough to show context (not just one word)
+- For client readiness score, evaluate each criterion objectively and sum the points (each criterion worth 25 points)
+- Base all scores and feedback on evidence from the conversation, not assumptions
+- Provide specific examples to justify all scoring decisions
+- Focus on actionable, constructive feedback for advisor improvement
+- In "Things to Preserve" section, highlight 3-5 specific strengths with concrete examples
+- In "Needs Improvement" section, provide 3-5 specific areas with constructive suggestions
 - This report serves as an internal evaluation document for advisor development
 
-Generate all content in the same language as the transcript, but use English field names in the JSON structure.`;
+CRITICAL: Generate all content values in the same language as the transcript, but use English field names in the JSON structure.`;
     } else if (reportType === 'client') {
       return basePrompt + `
 Generate a client report based directly on the transcript content - this report will be sent to the client so the tone should always be positive and helpful:
@@ -374,7 +385,7 @@ Generate all content in the same language as the transcript, but use English fie
     const baseSystem = "You are an AI assistant specialized in analyzing business conversations and generating professional reports. You can handle various types of audio content including meetings, consultations, presentations, and monologues. Always use the actual session information provided (client names, adviser names, dates, etc.) instead of generic placeholders like [Insert Name] or [Insert Date]. Be adaptive to the content type and provide valuable insights regardless of the conversation format. CRITICAL LANGUAGE RULE: Analyze the actual conversation language in the transcript content (ignore session metadata language). If the conversation is in Hebrew, generate ALL content values in Hebrew. If the conversation is in English, generate ALL content values in English. JSON field names must remain in English, but content values must match the conversation language exactly. IMPORTANT: You must respond with a valid JSON object only - no markdown, no additional text, just pure JSON.";
 
     if (reportType === 'adviser' || reportType === 'advisor') {
-      return baseSystem + " Generate advisor reports with conversation analysis and performance evaluation. Include specific client details and personalize the report with actual names and information provided. Focus on speaking time analysis, performance scores, and actionable feedback. Return the response as a JSON object with the following structure: {\"advisor_speaking_percentage\": \"number\", \"entrepreneur_speaking_percentage\": \"number\", \"conversation_duration\": \"string\", \"main_topics\": [\"array of topic tags\"], \"points_to_preserve\": [{\"title\": \"string\", \"description\": \"string\"}], \"points_for_improvement\": {\"recommendations\": [\"array of improvement suggestions\"], \"missed_opportunities\": [\"array of missed points\"], \"supporting_quotes\": [\"array of quotes\"]}, \"entrepreneur_readiness_score\": \"number\", \"advisor_performance_score\": \"number\"}";
+      return baseSystem + " Generate advisor reports with conversation analysis and performance evaluation. Include specific client details and personalize the report with actual names and information provided. The report should contain 4 main sections with comprehensive analysis. Return the response as a JSON object with the following structure: {\"topics_covered\": {\"introducing_advisor_percentage\": \"number\", \"introducing_mati_percentage\": \"number\", \"opening_percentage\": \"number\", \"collecting_info_percentage\": \"number\", \"actual_content_percentage\": \"number\"}, \"client_readiness_score\": \"number (0-100)\", \"listening\": {\"score\": \"number (0-5)\", \"description\": \"string\", \"supporting_quote\": \"string\"}, \"clarity\": {\"score\": \"number (0-5)\", \"description\": \"string\", \"supporting_quote\": \"string\"}, \"continuation\": {\"score\": \"number (0-5)\", \"description\": \"string\", \"supporting_quote\": \"string\"}, \"things_to_preserve\": [{\"title\": \"string\", \"description\": \"string\"}], \"needs_improvement\": [{\"title\": \"string\", \"description\": \"string\"}]}";
     } else if (reportType === 'client') {
       return baseSystem + " Generate client reports by extracting information directly from the transcript. Include specific client details and personalize the report with actual names and information provided. Focus STRICTLY on concrete information present in the conversation - do not infer or speculate. Return the response as a JSON object with the following structure: {\"key_insights\": [{\"category\": \"string (must be exactly one of: 'what we learned about the clients business', 'decisions made', 'opportunities/risks or concerns that came up')\", \"content\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]}], \"action_items\": [{\"task\": \"string\", \"owner\": \"string (client/adviser/other entity name)\", \"deadline\": \"string or null\", \"status\": \"string (open/in progress/completed)\"}]}";
     }

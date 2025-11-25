@@ -74,7 +74,7 @@ class CloudinaryService {
       fileFilter: (req, file, cb) => {
         // Allowed MIME types for audio/video
         const allowedMimeTypes = [
-          'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/flac',
+          'audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/flac', 'audio/ogg',
           'video/mp4', 'video/avi', 'video/quicktime', 'video/webm'
         ];
         
