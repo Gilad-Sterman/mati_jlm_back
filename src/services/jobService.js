@@ -54,7 +54,32 @@ class JobService {
         throw new Error(`Failed to get next job: ${error.message}`);
       }
 
-      return data.length > 0 ? data[0] : null;
+      if (data.length === 0) {
+        return null;
+      }
+
+      const job = data[0];
+
+      // Fetch additional job details including attempts and max_attempts
+      const { data: jobDetails, error: detailsError } = await supabaseAdmin
+        .from('jobs')
+        .select('attempts, max_attempts, status')
+        .eq('id', job.job_id)
+        .single();
+
+      if (detailsError) {
+        console.error('Error fetching job details:', detailsError);
+        // Return job without details rather than failing completely
+        return job;
+      }
+
+      // Merge the details with the job data
+      return {
+        ...job,
+        attempts: jobDetails.attempts,
+        max_attempts: jobDetails.max_attempts,
+        current_status: jobDetails.status
+      };
 
     } catch (error) {
       console.error('Error getting next job:', error);
@@ -109,7 +134,7 @@ class JobService {
       // First get current job data
       const { data: currentJob, error: fetchError } = await supabaseAdmin
         .from('jobs')
-        .select('attempts, max_attempts')
+        .select('attempts, max_attempts, status')
         .eq('id', jobId)
         .single();
 
@@ -117,8 +142,18 @@ class JobService {
         throw new Error(`Failed to fetch job: ${fetchError.message}`);
       }
 
+      // Safety check: if job is already failed or completed, don't process
+      if (currentJob.status === 'failed' || currentJob.status === 'completed') {
+        console.log(`⚠️ Job ${jobId} is already ${currentJob.status}, skipping markJobFailed`);
+        return currentJob;
+      }
+
       const newAttempts = currentJob.attempts + 1;
-      const canRetry = shouldRetry && newAttempts < currentJob.max_attempts;
+      
+      // Safety check: hard limit to prevent infinite retries
+      const hardLimit = 10;
+      const effectiveMaxAttempts = Math.min(currentJob.max_attempts, hardLimit);
+      const canRetry = shouldRetry && newAttempts < effectiveMaxAttempts;
 
       const updateData = {
         attempts: newAttempts,
@@ -142,14 +177,63 @@ class JobService {
         .single();
 
       if (error) {
-        throw new Error(`Failed to mark job as failed: ${error.message}`);
+        // Critical: if we can't update the job, force it to failed status
+        console.error(`❌ Critical: Failed to update job ${jobId}, forcing to failed status:`, error);
+        
+        try {
+          const { data: forceFailData, error: forceFailError } = await supabaseAdmin
+            .from('jobs')
+            .update({
+              status: 'failed',
+              error_log: `Original error: ${errorMessage}. Update error: ${error.message}`,
+              completed_at: new Date(),
+              updated_at: new Date()
+            })
+            .eq('id', jobId)
+            .select()
+            .single();
+
+          if (forceFailError) {
+            console.error(`❌ CRITICAL: Cannot update job ${jobId} at all:`, forceFailError);
+          }
+          
+          return forceFailData || currentJob;
+        } catch (forceError) {
+          console.error(`❌ CRITICAL: Force fail also failed for job ${jobId}:`, forceError);
+          throw new Error(`Failed to mark job as failed: ${error.message}`);
+        }
       }
 
-      console.log(`❌ Job ${jobId} failed (attempt ${newAttempts}/${currentJob.max_attempts}). ${canRetry ? 'Will retry' : 'Max attempts reached'}`);
+      const statusMessage = canRetry ? 
+        `Will retry in ${Math.pow(2, newAttempts - 1)} minutes` : 
+        `Max attempts reached (${newAttempts}/${effectiveMaxAttempts})`;
+      
+      console.log(`❌ Job ${jobId} failed (attempt ${newAttempts}/${effectiveMaxAttempts}). ${statusMessage}`);
       return data;
 
     } catch (error) {
       console.error('Error marking job as failed:', error);
+      
+      // Last resort: try to mark job as failed without incrementing attempts
+      try {
+        console.log(`🚨 Last resort: marking job ${jobId} as failed without increment`);
+        const { data: lastResortData } = await supabaseAdmin
+          .from('jobs')
+          .update({
+            status: 'failed',
+            error_log: `Critical failure in markJobFailed: ${error.message}. Original error: ${errorMessage}`,
+            completed_at: new Date(),
+            updated_at: new Date()
+          })
+          .eq('id', jobId)
+          .select()
+          .single();
+        
+        return lastResortData;
+      } catch (lastResortError) {
+        console.error(`❌ CRITICAL: Last resort failed for job ${jobId}:`, lastResortError);
+      }
+      
       throw error;
     }
   }

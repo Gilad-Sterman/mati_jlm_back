@@ -95,10 +95,9 @@ class AIWorker {
     const { job_id, job_type, session_id, payload } = job;
 
     try {
-      // Mark job as processing
+      // Mark job as processing (attempts will be incremented by markJobFailed if job fails)
       await JobService.updateJob(job_id, { 
-        status: 'processing',
-        attempts: (job.attempts || 0) + 1
+        status: 'processing'
       });
 
       // Process based on job type
