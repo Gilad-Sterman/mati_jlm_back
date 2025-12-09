@@ -322,12 +322,12 @@ class AIWorker {
 
       console.log(`✅ Both advisor and client reports generated for session ${sessionId}`);
 
-      // Save advisor report (Level 1 - non-editable metrics)
+      // Save advisor report (Level 1 - non-editable metrics) with idempotency protection
       const advisorContentString = typeof advisorReport.content === 'object' ? 
         JSON.stringify(advisorReport.content) : 
         advisorReport.content;
       
-      const savedAdvisorReport = await ReportService.createReport({
+      const savedAdvisorReport = await this.createReportSafely({
         session_id: sessionId,
         type: 'adviser',
         title: `Advisor Report - ${new Date().toLocaleDateString()}`,
@@ -342,12 +342,12 @@ class AIWorker {
         status: 'draft'
       });
 
-      // Save client report (Level 2 - editable insights)
+      // Save client report (Level 2 - editable insights) with idempotency protection
       const clientContentString = typeof clientReport.content === 'object' ? 
         JSON.stringify(clientReport.content) : 
         clientReport.content;
       
-      const savedClientReport = await ReportService.createReport({
+      const savedClientReport = await this.createReportSafely({
         session_id: sessionId,
         type: 'client',
         title: `Client Report - ${new Date().toLocaleDateString()}`,
@@ -533,6 +533,48 @@ class AIWorker {
       }
 
       throw error;
+    }
+  }
+
+  /**
+   * Create report with idempotency protection
+   * If report already exists for this session and type, return the existing one
+   */
+  async createReportSafely(reportData) {
+    try {
+      // First, try to create the report normally
+      return await ReportService.createReport(reportData);
+    } catch (error) {
+      // Check if this is a unique constraint violation (report already exists)
+      if (error.message && (
+        error.message.includes('duplicate key') || 
+        error.message.includes('unique constraint') ||
+        error.message.includes('UNIQUE constraint failed') ||
+        error.message.includes('already exists')
+      )) {
+        console.log(`⚠️ Report already exists for session ${reportData.session_id}, type ${reportData.type}. Fetching existing report...`);
+        
+        try {
+          // Get the existing report
+          const existingReports = await ReportService.getReportsForSession(reportData.session_id);
+          const existingReport = existingReports.find(r => r.type === reportData.type && r.is_current_version);
+          
+          if (existingReport) {
+            console.log(`✅ Found existing ${reportData.type} report for session ${reportData.session_id}: ${existingReport.id}`);
+            return existingReport;
+          } else {
+            // This shouldn't happen, but if it does, re-throw the original error
+            console.error(`❌ Could not find existing ${reportData.type} report for session ${reportData.session_id} after constraint violation`);
+            throw error;
+          }
+        } catch (fetchError) {
+          console.error(`❌ Failed to fetch existing report after constraint violation:`, fetchError);
+          throw error; // Re-throw original error
+        }
+      } else {
+        // This is a different kind of error, re-throw it
+        throw error;
+      }
     }
   }
 
