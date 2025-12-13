@@ -66,6 +66,23 @@ class SessionController {
             message: 'Please provide a valid email address'
           });
         }
+
+        // Phone validation
+        if (!parsedNewClient.phone || !parsedNewClient.phone.trim()) {
+          return res.status(400).json({
+            success: false,
+            message: 'Client phone number is required'
+          });
+        }
+
+        // Basic phone validation
+        const phoneRegex = /^[\+]?[0-9\s\-\(\)]{10,}$/;
+        if (!phoneRegex.test(parsedNewClient.phone.trim())) {
+          return res.status(400).json({
+            success: false,
+            message: 'Please provide a valid phone number'
+          });
+        }
       }
 
       let finalClientId = client_id;
@@ -85,6 +102,7 @@ class SessionController {
           const clientData = {
             name: parsedNewClient.name.trim(),
             email: parsedNewClient.email.trim(),
+            phone: parsedNewClient.phone ? parsedNewClient.phone.trim() : null,
             metadata: Object.keys(metadata).length > 0 ? metadata : {}
           };
 
@@ -277,6 +295,8 @@ class SessionController {
         client_id, 
         adviser_id, 
         search_term,
+        date_from,
+        date_to,
         sort_by,
         sort_direction 
       } = req.query;
@@ -286,6 +306,8 @@ class SessionController {
       if (client_id) filters.client_id = client_id;
       if (adviser_id && userRole === 'admin') filters.adviser_id = adviser_id;
       if (search_term) filters.search_term = search_term;
+      if (date_from) filters.date_from = date_from;
+      if (date_to) filters.date_to = date_to;
       if (sort_by) filters.sort_by = sort_by;
       if (sort_direction) filters.sort_direction = sort_direction;
 

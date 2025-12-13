@@ -68,22 +68,34 @@ class AuthService {
       // Use admin client to bypass RLS for authentication
       const client = supabaseAdmin || supabase;
 
-      // Find user by email
+      // Find user by email (don't filter by status yet)
       const { data: user, error } = await client
         .from('users')
         .select('*')
         .eq('email', email.toLowerCase())
-        .eq('status', 'active')
         .single();
 
       if (error || !user) {
         throw new Error('Invalid email or password');
       }
 
-      // Verify password
+      // Verify password first
       const isValidPassword = await this.comparePassword(password, user.password_hash);
       if (!isValidPassword) {
         throw new Error('Invalid email or password');
+      }
+
+      // Check user status after password verification
+      if (user.status === 'inactive') {
+        throw new Error('Your account is inactive and awaiting admin approval. Please contact an administrator.');
+      }
+
+      if (user.status === 'suspended') {
+        throw new Error('Your account has been suspended. Please contact an administrator.');
+      }
+
+      if (user.status !== 'active') {
+        throw new Error('Your account is not active. Please contact an administrator.');
       }
 
       // Generate tokens
@@ -155,7 +167,7 @@ class AuthService {
       
       const { data: user, error } = await client
         .from('users')
-        .select('id, email, name, role, status, created_at, updated_at')
+        .select('id, email, name, phone, role, status, created_at, updated_at')
         .eq('id', userId)
         .single();
 

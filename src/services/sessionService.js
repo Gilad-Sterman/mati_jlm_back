@@ -56,7 +56,7 @@ class SessionService {
         .select(`
           id, client_id, adviser_id, title, file_url, file_name, 
           file_size, file_type, duration, status, created_at, updated_at,
-          client:clients(id, name, email, metadata)
+          client:clients(id, name, email, phone, metadata)
         `)
         .single();
 
@@ -84,8 +84,8 @@ class SessionService {
         .select(`
           id, client_id, adviser_id, title, file_url, file_name, 
           file_size, file_type, duration, status, created_at, updated_at, transcription_text,
-          client:clients(id, name, email, metadata),
-          adviser:users(id, name, email)
+          client:clients(id, name, email, phone, metadata),
+          adviser:users(id, name, email, phone)
         `);
 
       // Role-based filtering
@@ -155,7 +155,7 @@ class SessionService {
           file_size, file_type, duration, status, transcription_text,
           transcription_metadata, processing_metadata, created_at, updated_at,
           client:clients(id, name, email, phone, metadata),
-          adviser:users(id, name, email)
+          adviser:users(id, name, email, phone)
         `)
         .eq('id', sessionId);
 
@@ -210,7 +210,7 @@ class SessionService {
         .select(`
           id, client_id, adviser_id, title, file_url, file_name, 
           file_size, file_type, duration, status, created_at, updated_at,
-          client:clients(id, name, email, metadata)
+          client:clients(id, name, email, phone, metadata)
         `)
         .single();
 
@@ -265,8 +265,8 @@ class SessionService {
         .select(`
           id, client_id, adviser_id, title, file_url, file_name, 
           file_size, file_type, duration, status, created_at, updated_at,
-          client:clients(id, name, email, metadata),
-          adviser:users(id, name, email),
+          client:clients(id, name, email, phone, metadata),
+          adviser:users(id, name, email, phone),
           reports(
             id, session_id, type, status, content, created_at, updated_at,
             version_number, is_current_version
@@ -575,6 +575,8 @@ class SessionService {
         client_id, 
         adviser_id, 
         search_term,
+        date_from,
+        date_to,
         sort_by = 'created_at',
         sort_direction = 'desc'
       } = filters;
@@ -586,8 +588,8 @@ class SessionService {
         .select(`
           id, client_id, adviser_id, title, file_url, file_name, 
           file_size, file_type, duration, status, created_at, updated_at, transcription_text,
-          client:clients(id, name, email, metadata),
-          adviser:users(id, name, email),
+          client:clients(id, name, email, phone, metadata),
+          adviser:users(id, name, email, phone),
           reports(
             id, session_id, type, status, content, created_at, updated_at,
             version_number, is_current_version
@@ -611,21 +613,62 @@ class SessionService {
         query = query.eq('adviser_id', adviser_id);
       }
       
-      // Search functionality
+      // Date range filtering
+      if (date_from) {
+        // Convert date string to start of day in ISO format
+        const startDate = new Date(date_from + 'T00:00:00.000Z');
+        query = query.gte('created_at', startDate.toISOString());
+      }
+      if (date_to) {
+        // Convert date string to end of day in ISO format
+        const endDate = new Date(date_to + 'T23:59:59.999Z');
+        query = query.lte('created_at', endDate.toISOString());
+      }
+      
+      // Enhanced search functionality - prepare search data first
+      let matchingClients = null;
+      let matchingAdvisers = null;
+      let searchValue = null;
+      
       if (search_term && search_term.trim() !== '') {
-        const searchValue = search_term.trim();
+        searchValue = search_term.trim();
         
-        // Create a more complex query that handles joined table searches properly
-        // We'll use multiple queries and combine them
-        const searchQueries = [];
+        // Get client IDs that match the search term (name, phone only)
+        const clientSearch = await client
+          .from('clients')
+          .select('id')
+          .or(`name.ilike.%${searchValue}%,phone.ilike.%${searchValue}%`);
+        matchingClients = clientSearch.data;
         
-        // Search in main table fields
-        searchQueries.push(`title.ilike.%${searchValue}%`);
-        searchQueries.push(`file_name.ilike.%${searchValue}%`);
+        // Get adviser IDs that match the search term (name, phone only)
+        const adviserSearch = await client
+          .from('users')
+          .select('id')
+          .or(`name.ilike.%${searchValue}%,phone.ilike.%${searchValue}%`);
+        matchingAdvisers = adviserSearch.data;
         
-        // For now, let's just search in the main table to avoid the OR issue
-        // We can enhance this later with a different approach for joined tables
-        query = query.or(searchQueries.join(','));
+        // Build search conditions
+        const searchConditions = [];
+        
+        // Search in session fields (title only)
+        searchConditions.push(`title.ilike.%${searchValue}%`);
+        
+        // Add client ID matches if any
+        if (matchingClients && matchingClients.length > 0) {
+          const clientIds = matchingClients.map(c => c.id);
+          searchConditions.push(`client_id.in.(${clientIds.join(',')})`);
+        }
+        
+        // Add adviser ID matches if any
+        if (matchingAdvisers && matchingAdvisers.length > 0) {
+          const adviserIds = matchingAdvisers.map(a => a.id);
+          searchConditions.push(`adviser_id.in.(${adviserIds.join(',')})`);
+        }
+        
+        // Apply the combined search conditions
+        if (searchConditions.length > 0) {
+          query = query.or(searchConditions.join(','));
+        }
       }
 
       // Get total count for pagination (same filtering logic)
@@ -647,14 +690,44 @@ class SessionService {
         countQuery = countQuery.eq('adviser_id', adviser_id);
       }
       
-      // Search functionality for count query (simplified version)
+      // Date range filtering for count query
+      if (date_from) {
+        // Convert date string to start of day in ISO format
+        const startDate = new Date(date_from + 'T00:00:00.000Z');
+        countQuery = countQuery.gte('created_at', startDate.toISOString());
+      }
+      if (date_to) {
+        // Convert date string to end of day in ISO format
+        const endDate = new Date(date_to + 'T23:59:59.999Z');
+        countQuery = countQuery.lte('created_at', endDate.toISOString());
+      }
+      
+      // Search functionality for count query (enhanced version)
       if (search_term && search_term.trim() !== '') {
         const searchValue = search_term.trim();
-        countQuery = countQuery.or(
-          `title.ilike.%${searchValue}%,file_name.ilike.%${searchValue}%`
-        );
-        // Note: We can't search by client/adviser name in the count query
-        // because it doesn't have the joins, but that's ok for pagination purposes
+        
+        // Use the same search logic as the main query for accurate count
+        const countSearchConditions = [];
+        
+        // Search in session fields (title only)
+        countSearchConditions.push(`title.ilike.%${searchValue}%`);
+        
+        // Add client ID matches if any (reuse the same client search)
+        if (matchingClients && matchingClients.length > 0) {
+          const clientIds = matchingClients.map(c => c.id);
+          countSearchConditions.push(`client_id.in.(${clientIds.join(',')})`);
+        }
+        
+        // Add adviser ID matches if any (reuse the same adviser search)
+        if (matchingAdvisers && matchingAdvisers.length > 0) {
+          const adviserIds = matchingAdvisers.map(a => a.id);
+          countSearchConditions.push(`adviser_id.in.(${adviserIds.join(',')})`);
+        }
+        
+        // Apply the combined search conditions to count query
+        if (countSearchConditions.length > 0) {
+          countQuery = countQuery.or(countSearchConditions.join(','));
+        }
       }
 
       const { count, error: countError } = await countQuery;
@@ -718,19 +791,54 @@ class SessionService {
   }
 
   /**
-   * Search sessions by title or client name
+   * Search sessions by title, client name, client phone, adviser name, or adviser phone
    */
   static async searchSessions(searchTerm, userId, userRole, limit = 20) {
     try {
       const client = supabaseAdmin || supabase;
+      const searchValue = searchTerm.trim();
+
+      // Get client IDs that match the search term (name, phone only)
+      const { data: matchingClients } = await client
+        .from('clients')
+        .select('id')
+        .or(`name.ilike.%${searchValue}%,phone.ilike.%${searchValue}%`);
+      
+      // Get adviser IDs that match the search term (name, phone only)
+      const { data: matchingAdvisers } = await client
+        .from('users')
+        .select('id')
+        .or(`name.ilike.%${searchValue}%,phone.ilike.%${searchValue}%`);
+      
+      // Build search conditions
+      const searchConditions = [];
+      
+      // Search in session fields (title only)
+      searchConditions.push(`title.ilike.%${searchValue}%`);
+      
+      // Add client ID matches if any
+      if (matchingClients && matchingClients.length > 0) {
+        const clientIds = matchingClients.map(c => c.id);
+        searchConditions.push(`client_id.in.(${clientIds.join(',')})`);
+      }
+      
+      // Add adviser ID matches if any
+      if (matchingAdvisers && matchingAdvisers.length > 0) {
+        const adviserIds = matchingAdvisers.map(a => a.id);
+        searchConditions.push(`adviser_id.in.(${adviserIds.join(',')})`);
+      }
 
       let query = client
         .from('sessions')
         .select(`
           id, client_id, adviser_id, title, file_name, status, created_at,
-          client:clients(id, name, email)
-        `)
-        .or(`title.ilike.%${searchTerm}%,file_name.ilike.%${searchTerm}%`);
+          client:clients(id, name, email, phone)
+        `);
+      
+      // Apply search conditions if any
+      if (searchConditions.length > 0) {
+        query = query.or(searchConditions.join(','));
+      }
 
       // Role-based filtering
       if (userRole === 'adviser') {

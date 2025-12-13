@@ -29,13 +29,13 @@ class AuthController {
    */
   static async register(req, res) {
     try {
-      const { email, name, password } = req.body;
+      const { email, name, phone, password } = req.body;
       
       // Validate required fields
-      if (!email || !name || !password) {
+      if (!email || !name || !phone || !password) {
         return res.status(400).json({
           success: false,
-          message: 'Email, name, and password are required'
+          message: 'Email, name, phone, and password are required'
         });
       }
 
@@ -45,6 +45,15 @@ class AuthController {
         return res.status(400).json({
           success: false,
           message: 'Invalid email format'
+        });
+      }
+
+      // Validate phone format
+      const phoneRegex = /^[\+]?[0-9\s\-\(\)]{10,}$/;
+      if (!phoneRegex.test(phone.trim())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid phone number format'
         });
       }
 
@@ -62,13 +71,15 @@ class AuthController {
       const user = await userService.createUser({
         email,
         name,
+        phone,
         password,
-        role: 'adviser'
+        role: 'adviser',
+        status: 'inactive'  // New advisers start as inactive until approved by admin
       });
       
       res.status(201).json({
         success: true,
-        message: 'Registration successful',
+        message: 'Registration successful. Your account is pending approval by an administrator.',
         data: { user }
       });
       

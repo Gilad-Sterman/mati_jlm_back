@@ -21,7 +21,7 @@ class UserService {
       // Get users with pagination
       const { data: users, error } = await client
         .from('users')
-        .select('id, email, name, role, status, created_at, updated_at')
+        .select('id, email, name, phone, role, status, created_at, updated_at')
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
@@ -51,7 +51,7 @@ class UserService {
       
       const { data: user, error } = await client
         .from('users')
-        .select('id, email, name, role, status, created_at, updated_at')
+        .select('id, email, name, phone, role, status, created_at, updated_at')
         .eq('id', userId)
         .single();
 
@@ -72,7 +72,7 @@ class UserService {
   static async createUser(userData) {
     try {
       const client = supabaseAdmin || supabase;
-      const { email, name, password, role = 'adviser' } = userData;
+      const { email, name, phone, password, role = 'adviser', status = 'inactive' } = userData;
 
       // Check if user already exists
       const { data: existingUser } = await client
@@ -100,11 +100,12 @@ class UserService {
         .insert({
           email: email.toLowerCase(),
           name,
+          phone,
           password_hash: passwordHash,
           role,
-          status: 'active'
+          status
         })
-        .select('id, email, name, role, status, created_at, updated_at')
+        .select('id, email, name, phone, role, status, created_at, updated_at')
         .single();
 
       if (error) throw error;
@@ -122,7 +123,7 @@ class UserService {
   static async updateUser(userId, updateData) {
     try {
       const client = supabaseAdmin || supabase;
-      const allowedFields = ['name', 'role', 'status'];
+      const allowedFields = ['name', 'phone', 'role', 'status'];
       
       // Filter only allowed fields
       const filteredData = {};
@@ -141,7 +142,7 @@ class UserService {
         .from('users')
         .update(filteredData)
         .eq('id', userId)
-        .select('id, email, name, role, status, created_at, updated_at')
+        .select('id, email, name, phone, role, status, created_at, updated_at')
         .single();
 
       if (error) throw error;
