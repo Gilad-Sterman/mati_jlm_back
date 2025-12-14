@@ -326,9 +326,15 @@ Generate a structured advisor report with conversation analysis and performance 
 
 ## ADVISOR REPORT STRUCTURE
 
-The report should contain 4 main sections with the following structure:
+The report should contain 5 main sections with the following structure:
 
-### 1. GENERAL PERFORMANCE
+### 1. TOPICS COVERED
+- topics: Array of main topics discussed in the conversation, where each topic includes:
+  * topic: Main topic name/title
+  * sub_topics: Array of related sub-topics that fall under this main topic
+  * time_percentage: Estimated percentage of conversation time spent on this topic and its sub-topics
+
+### 2. GENERAL PERFORMANCE
 - topics_covered: Object containing breakdown of conversation time spent on different phases:
   * introducing_advisor_percentage: Percentage of time spent introducing the advisor
   * introducing_mati_percentage: Percentage of time spent introducing MATI (the advisor's company)
@@ -342,7 +348,7 @@ The report should contain 4 main sections with the following structure:
   * Receptiveness to advice and solutions (25 points)
   * Expressed interest in continuing the process (25 points)
 
-### 2. ADVISOR QUALITY METRICS
+### 3. ADVISOR QUALITY METRICS
 This section should contain 3 subsections, each with score (0-5), description, and supporting quote:
 
 - listening: Object containing:
@@ -360,17 +366,19 @@ This section should contain 3 subsections, each with score (0-5), description, a
   * description: Analysis of the advisor's success in finding the right words to describe MATI's relevant services and their value for this specific entrepreneur and their needs, using the entrepreneur's own language and words to motivate them to action, consume services, and continue collaboration with MATI.
   * supporting_quote: Specific quote from the transcript that demonstrates this skill
 
-### 3. THINGS TO PRESERVE
+### 4. THINGS TO PRESERVE
 - things_to_preserve: Array of positive aspects the advisor did well, where each item includes:
   * title: Brief title of the positive point
   * description: Detailed explanation of what the advisor did well, based on evidence from the conversation
 
-### 4. NEEDS IMPROVEMENT
+### 5. NEEDS IMPROVEMENT
 - needs_improvement: Array of areas where the advisor could improve, where each item includes:
   * title: Brief title of the improvement area
   * description: Detailed explanation of what could be improved and constructive suggestions
 
 ## ANALYSIS INSTRUCTIONS:
+- For topics section, identify 3-7 main topics discussed and group related sub-topics under each main topic
+- Estimate time percentages for each topic based on conversation flow and depth of discussion
 - Calculate percentage breakdowns based on actual conversation flow and time spent on each phase
 - Analyze the full transcript to understand conversation structure and phases
 - For the quality metrics (Listening, Clarity, Continuation), provide honest scores from 0-5 based on evidence
@@ -391,6 +399,12 @@ Generate a client report based directly on the transcript content - this report 
 
 ## CLIENT REPORT STRUCTURE
 Extract the following information directly from the transcript:
+
+### General Summary
+- general_summary: A comprehensive summary of the conversation and the client's business in general. This should provide an overview of what was discussed, the client's business context, and the main topics covered during the meeting.
+
+### Target Summary
+- target_summary: A concise summary of the key insights and action items without any quotes. This should be a brief, actionable overview that synthesizes the main takeaways and next steps in clear, direct language.
 
 ### Key Insights (3-5 insights)
 - key_insights: Array of 3-5 key insights from the meeting, where each insight must include:
@@ -440,9 +454,9 @@ Generate all content in the same language as the transcript, but use English fie
     const baseSystem = "You are an AI assistant specialized in analyzing business conversations and generating professional reports. You can handle various types of audio content including meetings, consultations, presentations, and monologues. Always use the actual session information provided (client names, adviser names, dates, etc.) instead of generic placeholders like [Insert Name] or [Insert Date]. Be adaptive to the content type and provide valuable insights regardless of the conversation format. CRITICAL LANGUAGE RULE: Analyze the actual conversation language in the transcript content (ignore session metadata language). If the conversation is in Hebrew, generate ALL content values in Hebrew. If the conversation is in English, generate ALL content values in English. JSON field names must remain in English, but content values must match the conversation language exactly. IMPORTANT: You must respond with a valid JSON object only - no markdown, no additional text, just pure JSON.";
 
     if (reportType === 'adviser' || reportType === 'advisor') {
-      return baseSystem + " Generate advisor reports with conversation analysis and performance evaluation. Include specific client details and personalize the report with actual names and information provided. The report should contain 4 main sections with comprehensive analysis. Return the response as a JSON object with the following structure: {\"topics_covered\": {\"introducing_advisor_percentage\": \"number\", \"introducing_mati_percentage\": \"number\", \"opening_percentage\": \"number\", \"collecting_info_percentage\": \"number\", \"actual_content_percentage\": \"number\"}, \"client_readiness_score\": \"number (0-100)\", \"listening\": {\"score\": \"number (0-5)\", \"description\": \"string\", \"supporting_quote\": \"string\"}, \"clarity\": {\"score\": \"number (0-5)\", \"description\": \"string\", \"supporting_quote\": \"string\"}, \"continuation\": {\"score\": \"number (0-5)\", \"description\": \"string\", \"supporting_quote\": \"string\"}, \"things_to_preserve\": [{\"title\": \"string\", \"description\": \"string\"}], \"needs_improvement\": [{\"title\": \"string\", \"description\": \"string\"}]}";
+      return baseSystem + " Generate advisor reports with conversation analysis and performance evaluation. Include specific client details and personalize the report with actual names and information provided. The report should contain 5 main sections with comprehensive analysis. Return the response as a JSON object with the following structure: {\"topics\": [{\"topic\": \"string\", \"sub_topics\": [\"array of strings\"], \"time_percentage\": \"number\"}], \"topics_covered\": {\"introducing_advisor_percentage\": \"number\", \"introducing_mati_percentage\": \"number\", \"opening_percentage\": \"number\", \"collecting_info_percentage\": \"number\", \"actual_content_percentage\": \"number\"}, \"client_readiness_score\": \"number (0-100)\", \"listening\": {\"score\": \"number (0-5)\", \"description\": \"string\", \"supporting_quote\": \"string\"}, \"clarity\": {\"score\": \"number (0-5)\", \"description\": \"string\", \"supporting_quote\": \"string\"}, \"continuation\": {\"score\": \"number (0-5)\", \"description\": \"string\", \"supporting_quote\": \"string\"}, \"things_to_preserve\": [{\"title\": \"string\", \"description\": \"string\"}], \"needs_improvement\": [{\"title\": \"string\", \"description\": \"string\"}]}";
     } else if (reportType === 'client') {
-      return baseSystem + " Generate client reports by extracting information directly from the transcript. Include specific client details and personalize the report with actual names and information provided. Focus STRICTLY on concrete information present in the conversation - do not infer or speculate. Return the response as a JSON object with the following structure: {\"key_insights\": [{\"category\": \"string (must be exactly one of: 'what we learned about the clients business', 'decisions made', 'opportunities/risks or concerns that came up')\", \"content\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]}], \"action_items\": [{\"task\": \"string\", \"owner\": \"string (client/adviser/other entity name)\", \"deadline\": \"string or null\", \"status\": \"string (open/in progress/completed)\"}]}";
+      return baseSystem + " Generate client reports by extracting information directly from the transcript. Include specific client details and personalize the report with actual names and information provided. Focus STRICTLY on concrete information present in the conversation - do not infer or speculate. Return the response as a JSON object with the following structure: {\"general_summary\": \"string (comprehensive summary of conversation and client's business)\", \"target_summary\": \"string (concise summary of key insights and actions without quotes)\", \"key_insights\": [{\"category\": \"string (must be exactly one of: 'what we learned about the clients business', 'decisions made', 'opportunities/risks or concerns that came up')\", \"content\": \"string\", \"supporting_quotes\": [\"array of direct quotes\"]}], \"action_items\": [{\"task\": \"string\", \"owner\": \"string (client/adviser/other entity name)\", \"deadline\": \"string or null\", \"status\": \"string (open/in progress/completed)\"}]}";
     }
 
     return baseSystem;

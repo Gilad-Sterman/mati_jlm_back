@@ -350,7 +350,7 @@ class AIWorker {
       const savedClientReport = await this.createReportSafely({
         session_id: sessionId,
         type: 'client',
-        title: `Client Report - ${new Date().toLocaleDateString()}`,
+        title: `דוח יזם (${sessionContext.clientName})`,
         content: clientContentString,
         generation_metadata: {
           model: clientReport.metadata.model,

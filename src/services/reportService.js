@@ -81,7 +81,7 @@ class ReportService {
       const clientReport = {
         session_id: sessionId,
         type: 'client',
-        title: `Client Report - ${new Date().toLocaleDateString()}`,
+        title: `דוח יזם (${sessionId})`, // Will be updated with actual client name in aiWorker
         content: clientReportData.content,
         generation_metadata: {
           model: clientReportData.metadata.model,
