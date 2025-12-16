@@ -23,6 +23,7 @@ const sessionRoutes = require('./routes/sessions');
 const reportRoutes = require('./routes/reports');
 const socketRoutes = require('./routes/socket');
 const workerRoutes = require('./routes/worker');
+const salesforceRoutes = require('./routes/salesforceRoutes');
 
 const app = express();
 const server = createServer(app);
@@ -60,6 +61,7 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/socket', socketRoutes);
 app.use('/api/worker', workerRoutes);
+app.use('/api/salesforce', salesforceRoutes);
 
 // Make socket service accessible to routes
 app.set('socketService', socketService);

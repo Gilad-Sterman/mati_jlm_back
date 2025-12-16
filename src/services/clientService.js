@@ -275,6 +275,46 @@ class ClientService {
       throw new Error(error.message || 'Failed to get clients with session count');
     }
   }
+
+  /**
+   * Enrich client with Salesforce data (no access control needed - internal use)
+   */
+  static async enrichClientWithSalesforceData(clientId, salesforceData) {
+    try {
+      const client = supabaseAdmin || supabase;
+      
+      // Get existing metadata
+      const { data: existingClient } = await client
+        .from('clients')
+        .select('metadata')
+        .eq('id', clientId)
+        .single();
+
+      const enrichedMetadata = {
+        ...existingClient?.metadata || {},
+        salesforce: {
+          ...salesforceData,
+          enriched_at: new Date().toISOString()
+        }
+      };
+
+      const { data: updatedClient, error } = await client
+        .from('clients')
+        .update({ 
+          metadata: enrichedMetadata,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', clientId)
+        .select('id, name, email, phone, metadata, adviser_id, created_at, updated_at')
+        .single();
+
+      if (error) throw error;
+      return updatedClient;
+
+    } catch (error) {
+      throw new Error(error.message || 'Failed to enrich client with Salesforce data');
+    }
+  }
 }
 
 module.exports = ClientService;
