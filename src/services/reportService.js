@@ -233,7 +233,7 @@ class ReportService {
   /**
    * Export client report as PDF and update statuses
    */
-  static async exportClientReport(reportId, exportedBy) {
+  static async exportClientReport(reportId, exportedBy, pdfFile) {
     try {
       console.log(`📤 Starting export process for client report ${reportId}`);
 
@@ -319,12 +319,42 @@ class ReportService {
       console.log(`✅ Export process completed for report ${reportId}`);
       console.log(`📧 Session ${session.id} marked as completed`);
 
-      // TODO: Future implementations (add these as separate services/functions):
-      // 
-      // Step 4: Generate PDF from report content
-      // const pdfBuffer = await PDFService.generateReportPDF(report, session);
-      // const pdfUrl = await CloudinaryService.uploadPDF(pdfBuffer, `client-report-${reportId}.pdf`);
-      //
+      // Step 4: Save PDF file from frontend
+      let pdfUrl = null;
+      let pdfGenerated = false;
+      
+      if (pdfFile) {
+        try {
+          // TODO: Upload PDF to cloud storage (Cloudinary, AWS S3, etc.)
+          // For now, we'll save it locally or use a simple storage solution
+          const fs = require('fs');
+          const path = require('path');
+          const uploadsDir = path.join(__dirname, '../../uploads/pdfs');
+          
+          // Ensure uploads directory exists
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+          
+          const filename = `client-report-${reportId}-${Date.now()}.pdf`;
+          const filepath = path.join(uploadsDir, filename);
+          
+          // Save the PDF file
+          fs.writeFileSync(filepath, pdfFile.buffer);
+          
+          // For now, use local path as URL (in production, use cloud storage URL)
+          pdfUrl = `/uploads/pdfs/${filename}`;
+          pdfGenerated = true;
+          
+          console.log(`✅ PDF saved successfully: ${filepath}`);
+          
+        } catch (pdfError) {
+          console.error('Failed to save PDF file:', pdfError);
+          // Don't fail the entire export if PDF save fails
+        }
+      }
+      
+      // TODO: Future implementations:
       // Step 5: Send email to client with PDF attachment
       // await EmailService.sendClientReport({
       //   clientEmail: session.client.email,
@@ -346,7 +376,8 @@ class ReportService {
       return {
         report: approvedReport,
         session: updatedSession,
-        pdf_generated: false, // TODO: Set to true when PDF generation is implemented
+        pdf_generated: pdfGenerated,
+        pdf_url: pdfUrl,
         email_sent: false,    // TODO: Set to true when email sending is implemented
         crm_updated: false    // TODO: Set to true when CRM integration is implemented
       };

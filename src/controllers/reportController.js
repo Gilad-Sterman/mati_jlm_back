@@ -291,12 +291,20 @@ class ReportController {
     try {
       const { id } = req.params;
       const user = req.user;
+      const pdfFile = req.file; // PDF file from frontend
 
       // Basic validation
       if (!id) {
         return res.status(400).json({
           success: false,
           message: 'Report ID is required'
+        });
+      }
+
+      if (!pdfFile) {
+        return res.status(400).json({
+          success: false,
+          message: 'PDF file is required'
         });
       }
 
@@ -319,8 +327,8 @@ class ReportController {
 
       // TODO: Add authorization check - user should own the session or be admin
       
-      // Start the export process
-      const exportResult = await ReportService.exportClientReport(id, user.id);
+      // Start the export process with PDF file
+      const exportResult = await ReportService.exportClientReport(id, user.id, pdfFile);
       
       res.json({
         success: true,
@@ -332,6 +340,7 @@ class ReportController {
             exported_by: user.id,
             exported_at: new Date().toISOString(),
             pdf_generated: exportResult.pdf_generated,
+            pdf_url: exportResult.pdf_url,
             email_sent: exportResult.email_sent,
             crm_updated: exportResult.crm_updated
           }
