@@ -90,25 +90,22 @@ class ReportController {
         });
       }
 
-      // TODO: Implement actual report fetching by ID
-      // TODO: Add authorization check
+      // Get the report using ReportService
+      const report = await ReportService.getReportById(id);
+      if (!report) {
+        return res.status(404).json({
+          success: false,
+          message: 'Report not found'
+        });
+      }
+
+      // TODO: Add authorization check - user should own the session or be admin
       
-      // For now, return placeholder data
       res.json({
         success: true,
         message: 'Report retrieved successfully',
         data: {
-          report: {
-            id: id,
-            title: 'Sample Report',
-            type: 'adviser',
-            status: 'approved',
-            content: 'This is a sample report content...',
-            version_number: 1,
-            is_current_version: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }
+          report: report
         }
       });
 
@@ -139,18 +136,40 @@ class ReportController {
         });
       }
 
-      // TODO: Implement actual report update
-      // TODO: Add authorization check
+      // Get the report to validate it exists and check ownership
+      const report = await ReportService.getReportById(id);
+      if (!report) {
+        return res.status(404).json({
+          success: false,
+          message: 'Report not found'
+        });
+      }
+
+      // TODO: Add authorization check - user should own the session or be admin
+      
+      // Validate content if provided
+      if (updateData.content) {
+        try {
+          // Ensure content is valid JSON if it's a string
+          if (typeof updateData.content === 'string') {
+            JSON.parse(updateData.content);
+          }
+        } catch (parseError) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid JSON content provided'
+          });
+        }
+      }
+
+      // Update the report using ReportService
+      const updatedReport = await ReportService.updateReport(id, updateData);
       
       res.json({
         success: true,
         message: 'Report updated successfully',
         data: {
-          report: {
-            id: id,
-            ...updateData,
-            updated_at: new Date().toISOString()
-          }
+          report: updatedReport
         }
       });
 
