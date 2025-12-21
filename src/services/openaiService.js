@@ -74,10 +74,17 @@ class OpenAIService {
       const stats = fs.statSync(tempFilePath);
       const fileSizeInMB = stats.size / (1024 * 1024);
 
+      console.log(`📁 File size: ${fileSizeInMB.toFixed(2)}MB`);
+
+      // NEW: Simple size check - if > 10MB, use chunking (testing threshold)
+      if (fileSizeInMB > 10) {
+        console.log(`📦 Large file detected, using chunking...`);
+        return await this.transcribeWithChunking(tempFilePath, fileName, options);
+      }
+
+      // Keep existing 25MB check for safety
       if (fileSizeInMB > 25) {
-        console.log(`⚠️ File size (${fileSizeInMB.toFixed(2)}MB) exceeds 25MB limit. Implementing chunking solution...`);
-        // For now, we'll implement a simple fallback - in the future, add FFmpeg chunking here
-        throw new Error(`File size (${fileSizeInMB.toFixed(2)}MB) exceeds OpenAI's 25MB limit. Please implement chunking solution for files this large.`);
+        throw new Error(`File size (${fileSizeInMB.toFixed(2)}MB) exceeds OpenAI's 25MB limit.`);
       }
 
       // Prepare transcription options
@@ -133,6 +140,241 @@ class OpenAIService {
       if (tempFilePath) {
         this.cleanupTempFile(tempFilePath);
       }
+    }
+  }
+
+  /**
+   * Transcribe large files using chunking (requires FFmpeg)
+   */
+  async transcribeWithChunking(filePath, fileName, options = {}) {
+    const tempDir = path.join(process.cwd(), 'temp', `chunks_${Date.now()}`);
+    
+    try {
+      // Check if FFmpeg is available
+      await this.checkFFmpegAvailable();
+      
+      // Create temp directory
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      
+      console.log(`📦 Splitting large file into chunks...`);
+      
+      // Split into chunks (simple approach)
+      const chunks = await this.splitAudioSimple(filePath, tempDir);
+      console.log(`📦 Created ${chunks.length} chunks`);
+      
+      // Transcribe chunks sequentially (simple, reliable)
+      const transcripts = [];
+      for (let i = 0; i < chunks.length; i++) {
+        console.log(`🎵 Transcribing chunk ${i + 1}/${chunks.length}...`);
+        
+        try {
+          const chunkResult = await this.transcribeSingleChunk(chunks[i]);
+          transcripts.push(chunkResult);
+        } catch (chunkError) {
+          console.error(`❌ Chunk ${i + 1} failed:`, chunkError.message);
+          // Continue with other chunks - don't fail entire process
+          transcripts.push({ 
+            text: `[Chunk ${i + 1} transcription failed]`,
+            failed: true,
+            chunkIndex: i + 1
+          });
+        }
+      }
+      
+      // Simple merge - just concatenate text
+      const successfulTranscripts = transcripts.filter(t => !t.failed);
+      const mergedText = successfulTranscripts.map(t => t.text).join(' ');
+      
+      if (mergedText.length === 0) {
+        throw new Error('All chunks failed transcription');
+      }
+      
+      console.log(`✅ Successfully transcribed ${successfulTranscripts.length}/${chunks.length} chunks`);
+      
+      return {
+        text: mergedText,
+        language: successfulTranscripts[0]?.language || 'en',
+        duration: null, // Keep simple for now
+        segments: [], // Keep simple for now
+        metadata: {
+          chunked: true,
+          totalChunks: chunks.length,
+          successfulChunks: successfulTranscripts.length,
+          failedChunks: transcripts.filter(t => t.failed).length,
+          processing_method: 'chunked_transcription',
+          transcribed_at: new Date().toISOString()
+        }
+      };
+      
+    } catch (error) {
+      console.error(`❌ Chunked transcription failed:`, error.message);
+      
+      // Provide helpful error messages
+      if (error.message.includes('FFmpeg')) {
+        throw new Error('Large file processing requires FFmpeg. Please install FFmpeg: brew install ffmpeg');
+      }
+      
+      throw error;
+    } finally {
+      // Cleanup temp directory
+      if (fs.existsSync(tempDir)) {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    }
+  }
+
+  /**
+   * Check if FFmpeg is available on the system
+   */
+  async checkFFmpegAvailable() {
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', ['-version']);
+      
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          resolve(true);
+        } else {
+          reject(new Error('FFmpeg not found. Please install FFmpeg.'));
+        }
+      });
+      
+      ffmpeg.on('error', (error) => {
+        reject(new Error('FFmpeg not found. Please install FFmpeg.'));
+      });
+    });
+  }
+
+  /**
+   * Simple FFmpeg splitting based on file size - target 5MB chunks
+   */
+  async splitAudioSimple(inputPath, outputDir) {
+    const { spawn } = require('child_process');
+    
+    // Get file size and duration
+    const stats = fs.statSync(inputPath);
+    const fileSizeInMB = stats.size / (1024 * 1024);
+    const duration = await this.getAudioDuration(inputPath);
+    
+    // Calculate target chunk duration to get ~5MB chunks
+    const targetChunkSizeMB = 5;
+    const estimatedChunkDuration = (duration * targetChunkSizeMB) / fileSizeInMB;
+    const chunkDuration = Math.max(estimatedChunkDuration, 60); // Minimum 1 minute chunks
+    const numChunks = Math.ceil(duration / chunkDuration);
+    
+    console.log(`📊 File: ${fileSizeInMB.toFixed(1)}MB, ${Math.round(duration/60)} minutes`);
+    console.log(`📦 Creating ${numChunks} chunks of ~${Math.round(chunkDuration/60)} minutes each (target: ${targetChunkSizeMB}MB per chunk)`);
+    
+    const chunks = [];
+    
+    for (let i = 0; i < numChunks; i++) {
+      const startTime = i * chunkDuration;
+      const outputPath = path.join(outputDir, `chunk_${String(i + 1).padStart(3, '0')}.mp3`);
+      
+      await new Promise((resolve, reject) => {
+        const ffmpeg = spawn('ffmpeg', [
+          '-i', inputPath,
+          '-ss', startTime.toString(),
+          '-t', chunkDuration.toString(),
+          '-c', 'copy', // No re-encoding for speed
+          '-avoid_negative_ts', 'make_zero',
+          outputPath
+        ]);
+        
+        ffmpeg.on('close', (code) => {
+          if (code === 0) {
+            // Check actual chunk size
+            const chunkStats = fs.statSync(outputPath);
+            const chunkSizeMB = chunkStats.size / (1024 * 1024);
+            
+            chunks.push({
+              path: outputPath,
+              index: i + 1,
+              startTime,
+              endTime: Math.min(startTime + chunkDuration, duration),
+              sizeMB: chunkSizeMB
+            });
+            
+            console.log(`✅ Chunk ${i + 1}: ${chunkSizeMB.toFixed(1)}MB`);
+            resolve();
+          } else {
+            reject(new Error(`FFmpeg failed for chunk ${i + 1}`));
+          }
+        });
+        
+        ffmpeg.on('error', (error) => {
+          reject(new Error(`FFmpeg error for chunk ${i + 1}: ${error.message}`));
+        });
+      });
+    }
+    
+    return chunks;
+  }
+
+  /**
+   * Get audio duration using FFprobe
+   */
+  async getAudioDuration(filePath) {
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve, reject) => {
+      const ffprobe = spawn('ffprobe', [
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_format',
+        filePath
+      ]);
+      
+      let output = '';
+      ffprobe.stdout.on('data', (data) => output += data);
+      
+      ffprobe.on('close', (code) => {
+        if (code === 0) {
+          try {
+            const info = JSON.parse(output);
+            const duration = parseFloat(info.format.duration);
+            resolve(duration);
+          } catch (parseError) {
+            reject(new Error('Failed to parse audio duration'));
+          }
+        } else {
+          reject(new Error('Failed to get audio duration'));
+        }
+      });
+      
+      ffprobe.on('error', (error) => {
+        reject(new Error(`FFprobe error: ${error.message}`));
+      });
+    });
+  }
+
+  /**
+   * Transcribe a single chunk
+   */
+  async transcribeSingleChunk(chunk) {
+    try {
+      const transcriptionOptions = {
+        file: fs.createReadStream(chunk.path),
+        model: 'whisper-1',
+        response_format: 'verbose_json'
+      };
+      
+      const response = await this.openai.audio.transcriptions.create(transcriptionOptions);
+      
+      return {
+        text: response.text,
+        language: response.language,
+        chunkIndex: chunk.index,
+        startTime: chunk.startTime,
+        endTime: chunk.endTime
+      };
+      
+    } catch (error) {
+      console.error(`❌ Chunk ${chunk.index} transcription failed:`, error.message);
+      throw error;
     }
   }
 
