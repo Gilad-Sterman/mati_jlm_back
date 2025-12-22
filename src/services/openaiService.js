@@ -148,6 +148,7 @@ class OpenAIService {
    */
   async transcribeWithChunking(filePath, fileName, options = {}) {
     const tempDir = path.join(process.cwd(), 'temp', `chunks_${Date.now()}`);
+    const { sessionId, socketService } = options;
     
     try {
       // Check if FFmpeg is available
@@ -160,20 +161,72 @@ class OpenAIService {
       
       console.log(`📦 Splitting large file into chunks...`);
       
+      // Emit chunking started event
+      if (sessionId && socketService) {
+        socketService.sendToSession(sessionId, 'transcription_chunking_started', {
+          sessionId,
+          fileName,
+          messageKey: 'chunkingStarted'
+        });
+      }
+      
       // Split into chunks (simple approach)
       const chunks = await this.splitAudioSimple(filePath, tempDir);
       console.log(`📦 Created ${chunks.length} chunks`);
+      
+      // Emit chunks created event
+      if (sessionId && socketService) {
+        socketService.sendToSession(sessionId, 'transcription_chunks_created', {
+          sessionId,
+          totalChunks: chunks.length,
+          messageKey: 'chunksCreated'
+        });
+      }
       
       // Transcribe chunks sequentially (simple, reliable)
       const transcripts = [];
       for (let i = 0; i < chunks.length; i++) {
         console.log(`🎵 Transcribing chunk ${i + 1}/${chunks.length}...`);
         
+        // Emit chunk progress event
+        if (sessionId && socketService) {
+          socketService.sendToSession(sessionId, 'transcription_chunk_progress', {
+            sessionId,
+            currentChunk: i + 1,
+            totalChunks: chunks.length,
+            progress: Math.round(((i) / chunks.length) * 100),
+            messageKey: 'chunkProgress'
+          });
+        }
+        
         try {
           const chunkResult = await this.transcribeSingleChunk(chunks[i]);
           transcripts.push(chunkResult);
+          
+          // Emit chunk completed event
+          if (sessionId && socketService) {
+            socketService.sendToSession(sessionId, 'transcription_chunk_completed', {
+              sessionId,
+              chunkIndex: i + 1,
+              totalChunks: chunks.length,
+              progress: Math.round(((i + 1) / chunks.length) * 100),
+              messageKey: 'chunkCompleted'
+            });
+          }
         } catch (chunkError) {
           console.error(`❌ Chunk ${i + 1} failed:`, chunkError.message);
+          
+          // Emit chunk failed event
+          if (sessionId && socketService) {
+            socketService.sendToSession(sessionId, 'transcription_chunk_failed', {
+              sessionId,
+              chunkIndex: i + 1,
+              totalChunks: chunks.length,
+              error: chunkError.message,
+              messageKey: 'chunkFailed'
+            });
+          }
+          
           // Continue with other chunks - don't fail entire process
           transcripts.push({ 
             text: `[Chunk ${i + 1} transcription failed]`,
@@ -192,6 +245,17 @@ class OpenAIService {
       }
       
       console.log(`✅ Successfully transcribed ${successfulTranscripts.length}/${chunks.length} chunks`);
+      
+      // Emit chunking completed event
+      if (sessionId && socketService) {
+        socketService.sendToSession(sessionId, 'transcription_chunking_completed', {
+          sessionId,
+          totalChunks: chunks.length,
+          successfulChunks: successfulTranscripts.length,
+          failedChunks: transcripts.filter(t => t.failed).length,
+          messageKey: 'chunkingCompleted'
+        });
+      }
       
       return {
         text: mergedText,

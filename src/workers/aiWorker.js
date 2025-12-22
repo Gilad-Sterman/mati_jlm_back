@@ -166,11 +166,15 @@ class AIWorker {
       // If Hebrew content is expected, specify language
       // transcriptionOptions.language = 'he';
 
-      // Call OpenAI Whisper
+      // Call OpenAI Whisper with socket support for chunked progress
       const transcriptionResult = await openaiService.transcribeAudio(
         file_url, 
         file_name, 
-        transcriptionOptions
+        {
+          ...transcriptionOptions,
+          sessionId,
+          socketService
+        }
       );
 
       console.log(`✅ Transcription completed for session ${sessionId}`);
