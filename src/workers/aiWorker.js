@@ -53,6 +53,9 @@ class AIWorker {
   async processJobs() {
     while (this.isRunning) {
       try {
+        // Check memory usage before processing jobs
+        this.checkMemoryUsage();
+        
         // Get next job from queue
         const job = await JobService.getNextJob();
 
@@ -590,9 +593,77 @@ class AIWorker {
   }
 
   /**
+   * Check memory usage and trigger cleanup if needed
+   */
+  checkMemoryUsage() {
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+    const rssMB = Math.round(memUsage.rss / 1024 / 1024);
+    
+    // Log memory usage periodically
+    if (this.currentJob) {
+      console.log(`💾 Memory: ${heapUsedMB}MB used, ${heapTotalMB}MB total, ${rssMB}MB RSS`);
+    }
+    
+    // Trigger cleanup if memory usage is high
+    const MEMORY_WARNING_THRESHOLD = 200; // 200MB
+    const MEMORY_CRITICAL_THRESHOLD = 240; // 240MB
+    
+    if (heapUsedMB > MEMORY_CRITICAL_THRESHOLD) {
+      console.warn(`🚨 CRITICAL: Memory usage ${heapUsedMB}MB exceeds ${MEMORY_CRITICAL_THRESHOLD}MB threshold!`);
+      this.forceMemoryCleanup();
+    } else if (heapUsedMB > MEMORY_WARNING_THRESHOLD) {
+      console.warn(`⚠️ WARNING: Memory usage ${heapUsedMB}MB exceeds ${MEMORY_WARNING_THRESHOLD}MB threshold`);
+      this.triggerGarbageCollection();
+    }
+  }
+
+  /**
+   * Force memory cleanup
+   */
+  async forceMemoryCleanup() {
+    console.log('🧹 Forcing memory cleanup...');
+    
+    // Trigger garbage collection if available
+    this.triggerGarbageCollection();
+    
+    // Clean up temp files
+    try {
+      const openaiService = require('../services/openaiService');
+      await openaiService.cleanupTempFiles();
+    } catch (error) {
+      console.warn('Failed to cleanup temp files:', error.message);
+    }
+    
+    // Small delay to allow cleanup to complete
+    await this.sleep(2000);
+    
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    console.log(`🧹 Memory after cleanup: ${heapUsedMB}MB`);
+  }
+
+  /**
+   * Trigger garbage collection if available
+   */
+  triggerGarbageCollection() {
+    if (global.gc) {
+      console.log('♻️ Triggering garbage collection...');
+      global.gc();
+    } else {
+      console.log('♻️ Garbage collection not available (run with --expose-gc flag)');
+    }
+  }
+
+  /**
    * Get worker status
    */
   getStatus() {
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+    
     return {
       isRunning: this.isRunning,
       currentJob: this.currentJob ? {
@@ -600,7 +671,12 @@ class AIWorker {
         type: this.currentJob.job_type,
         sessionId: this.currentJob.session_id
       } : null,
-      pollInterval: this.pollInterval
+      pollInterval: this.pollInterval,
+      memory: {
+        heapUsedMB,
+        heapTotalMB,
+        rssMB: Math.round(memUsage.rss / 1024 / 1024)
+      }
     };
   }
 }

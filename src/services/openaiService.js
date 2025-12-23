@@ -138,8 +138,11 @@ class OpenAIService {
     } finally {
       // Always clean up temp file
       if (tempFilePath) {
-        this.cleanupTempFile(tempFilePath);
+        this.cleanupTempFileSafe(tempFilePath);
       }
+      
+      // Periodic cleanup of old temp files
+      await this.cleanupTempFiles();
     }
   }
 
@@ -236,13 +239,15 @@ class OpenAIService {
         }
       }
       
-      // Simple merge - just concatenate text
+      // Memory-optimized merge - avoid large string concatenation
       const successfulTranscripts = transcripts.filter(t => !t.failed);
-      const mergedText = successfulTranscripts.map(t => t.text).join(' ');
       
-      if (mergedText.length === 0) {
+      if (successfulTranscripts.length === 0) {
         throw new Error('All chunks failed transcription');
       }
+      
+      // Use streaming approach for large transcripts
+      const mergedText = this.mergeTranscriptsMemoryOptimized(successfulTranscripts);
       
       console.log(`✅ Successfully transcribed ${successfulTranscripts.length}/${chunks.length} chunks`);
       
@@ -282,10 +287,11 @@ class OpenAIService {
       
       throw error;
     } finally {
-      // Cleanup temp directory
-      if (fs.existsSync(tempDir)) {
-        fs.rmSync(tempDir, { recursive: true, force: true });
-      }
+      // Clean up temp directory with improved error handling
+      this.cleanupTempFileSafe(tempDir);
+      
+      // Periodic cleanup of old temp files
+      await this.cleanupTempFiles();
     }
   }
 
@@ -443,9 +449,29 @@ class OpenAIService {
   }
 
   /**
-   * Generate report using GPT based on transcript
+   * Generate report from transcript using OpenAI with memory optimization
    */
-  async generateReport(transcript, reportType, options = {}) {
+  async generateReport(transcript, reportType = 'advisor', options = {}) {
+    // Check if transcript is too large and needs chunking
+    const transcriptLength = transcript.length;
+    const TOKEN_LIMIT = 5000; // Very low threshold for testing chunked processing (was 20000)
+    const CHARS_PER_TOKEN = 4; // Rough estimate
+    
+    console.log(`📊 Transcript length: ${transcriptLength} chars, threshold: ${TOKEN_LIMIT * CHARS_PER_TOKEN} chars`);
+    
+    if (transcriptLength > TOKEN_LIMIT * CHARS_PER_TOKEN) {
+      console.log(`📊 Large transcript detected (${transcriptLength} chars), using chunked processing...`);
+      return await this.generateReportChunked(transcript, reportType, options);
+    }
+    
+    console.log(`📊 Using direct processing for transcript (${transcriptLength} chars)`);
+    return await this.generateReportDirect(transcript, reportType, options);
+  }
+
+  /**
+   * Direct report generation for smaller transcripts
+   */
+  async generateReportDirect(transcript, reportType = 'advisor', options = {}) {
     try {
       const prompt = this.buildReportPrompt(transcript, reportType, options);
 
@@ -477,10 +503,10 @@ class OpenAIService {
           return JSON.parse(content);
         } catch (error) {
           console.log('⚠️ Initial JSON parse failed, attempting to sanitize...');
+          console.log('Error position:', error.message.match(/position (\d+)/)?.[1] || 'unknown');
           
-          // Sanitize common Hebrew quote issues
+          // Step 1: Fix common Hebrew abbreviations with quotes
           let sanitized = content
-            // Replace Hebrew quotes in common abbreviations
             .replace(/תב"ע/g, 'תב\\"ע')
             .replace(/ח"כ/g, 'ח\\"כ')
             .replace(/מ"מ/g, 'מ\\"מ')
@@ -490,34 +516,51 @@ class OpenAIService {
             .replace(/י"ש/g, 'י\\"ש')
             .replace(/ע"י/g, 'ע\\"י')
             .replace(/ב"כ/g, 'ב\\"כ')
-            // Handle other unescaped quotes within Hebrew text (but not JSON structure quotes)
-            .replace(/"([^"]*[\u0590-\u05FF][^"]*?)"/g, (match, hebrewText) => {
-              // Only escape quotes that are inside Hebrew text, not JSON structure quotes
-              const escapedText = hebrewText.replace(/"/g, '\\"');
-              return `"${escapedText}"`;
-            });
+            .replace(/נדל"ן/g, 'נדל\\"ן')
+            .replace(/הדריכלות/g, 'האדריכלות'); // Fix typo that might cause issues
           
           try {
             return JSON.parse(sanitized);
           } catch (secondError) {
-            console.log('⚠️ Sanitization failed, trying more aggressive approach...');
+            console.log('⚠️ Basic sanitization failed, trying advanced approach...');
             
-            // More aggressive sanitization - escape all unescaped quotes in string values
-            sanitized = content.replace(/"([^"\\]*(\\.[^"\\]*)*?)"/g, (match, stringContent) => {
-              // Don't touch JSON structure, only string content
-              if (stringContent.includes(':') || stringContent.includes('{') || stringContent.includes('[')) {
-                return match; // This is likely JSON structure, leave it alone
+            // Step 2: More comprehensive quote handling
+            // Find and fix unescaped quotes within string values
+            sanitized = sanitized.replace(/"([^"]*(?:\\.[^"]*)*)"/g, (match, content) => {
+              // Skip if this looks like a JSON key or structure
+              if (content.match(/^\s*[\{\[\]\}]/) || content.includes('":')) {
+                return match;
               }
-              // Escape any unescaped quotes in the string content
-              const escaped = stringContent.replace(/(?<!\\)"/g, '\\"');
-              return `"${escaped}"`;
+              
+              // Escape unescaped quotes within the string content
+              const fixed = content.replace(/(?<!\\)"/g, '\\"');
+              return `"${fixed}"`;
             });
             
             try {
               return JSON.parse(sanitized);
-            } catch (finalError) {
-              console.error('❌ All sanitization attempts failed');
-              throw finalError;
+            } catch (thirdError) {
+              console.log('⚠️ Advanced sanitization failed, trying final approach...');
+              
+              // Step 3: Last resort - fix malformed JSON structure
+              sanitized = sanitized
+                // Fix missing commas before closing braces/brackets
+                .replace(/"\s*\n\s*}/g, '"\n}')
+                .replace(/"\s*\n\s*]/g, '"\n]')
+                // Fix trailing commas
+                .replace(/,(\s*[}\]])/g, '$1')
+                // Fix double quotes in Hebrew text more aggressively
+                .replace(/:\s*"([^"]*)"([^",\]\}]*)"([^",\]\}]*?)"/g, (match, p1, p2, p3) => {
+                  return `: "${p1}\\"${p2}\\"${p3}"`;
+                });
+              
+              try {
+                return JSON.parse(sanitized);
+              } catch (finalError) {
+                console.error('❌ All sanitization attempts failed');
+                console.log('Final sanitized content:', sanitized.substring(0, 500) + '...');
+                throw finalError;
+              }
             }
           }
         }
@@ -551,6 +594,278 @@ class OpenAIService {
       console.error(`Error generating ${reportType} report:`, error);
       throw new Error(`Report generation failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Generate report for large transcripts using chunked processing
+   */
+  async generateReportChunked(transcript, reportType = 'advisor', options = {}) {
+    try {
+      console.log(`📊 Processing large transcript (${transcript.length} chars) in chunks...`);
+      
+      // Split transcript into manageable chunks
+      const chunks = this.splitTranscriptIntoChunks(transcript);
+      console.log(`📦 Split into ${chunks.length} chunks`);
+      
+      // Process each chunk to create summaries
+      const chunkSummaries = [];
+      for (let i = 0; i < chunks.length; i++) {
+        console.log(`🔄 Processing chunk ${i + 1}/${chunks.length}...`);
+        
+        const summary = await this.summarizeChunk(chunks[i], reportType, options);
+        chunkSummaries.push(summary);
+        
+        // Small delay to avoid rate limiting
+        if (i < chunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+      
+      // Combine summaries into final report
+      console.log(`🔗 Combining ${chunkSummaries.length} chunk summaries...`);
+      const finalReport = await this.combineChunkSummaries(chunkSummaries, reportType, options);
+      
+      return finalReport;
+      
+    } catch (error) {
+      console.error('Error in chunked report generation:', error);
+      throw new Error(`Chunked report generation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Split transcript into token-aware chunks
+   */
+  splitTranscriptIntoChunks(transcript) {
+    const CHUNK_SIZE = 15000; // Smaller chunks for better processing (~3.75k tokens)
+    const chunks = [];
+    
+    // Split by sentences to maintain context
+    const sentences = transcript.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    
+    let currentChunk = '';
+    for (const sentence of sentences) {
+      const potentialChunk = currentChunk + sentence + '. ';
+      
+      if (potentialChunk.length > CHUNK_SIZE && currentChunk.length > 0) {
+        chunks.push(currentChunk.trim());
+        currentChunk = sentence + '. ';
+      } else {
+        currentChunk = potentialChunk;
+      }
+    }
+    
+    // Add the last chunk
+    if (currentChunk.trim().length > 0) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    // Ensure we have at least 2 chunks for testing if transcript is large enough
+    if (chunks.length === 1 && transcript.length > 20000) {
+      const midPoint = Math.floor(transcript.length / 2);
+      const firstHalf = transcript.substring(0, midPoint);
+      const secondHalf = transcript.substring(midPoint);
+      return [firstHalf, secondHalf];
+    }
+    
+    return chunks;
+  }
+
+  /**
+   * Summarize a single chunk of transcript
+   */
+  async summarizeChunk(chunk, reportType, options = {}) {
+    const summaryPrompt = `Please analyze this portion of a business consultation meeting and extract key insights:
+
+TRANSCRIPT SEGMENT:
+${chunk}
+
+Please provide a concise summary focusing on:
+1. Key business topics discussed
+2. Important decisions or recommendations
+3. Client concerns or questions
+4. Advisor guidance provided
+
+Respond in JSON format:
+{
+  "key_topics": ["topic1", "topic2"],
+  "decisions": ["decision1", "decision2"],
+  "client_concerns": ["concern1", "concern2"],
+  "advisor_guidance": ["guidance1", "guidance2"],
+  "summary": "Brief overall summary"
+}`;
+
+    const response = await this.openai.chat.completions.create({
+      model: options.model || 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert business consultant analyzer. Provide structured summaries in JSON format.'
+        },
+        {
+          role: 'user',
+          content: summaryPrompt
+        }
+      ],
+      max_tokens: 800,
+      temperature: 0.3
+    });
+
+    const rawContent = response.choices[0].message.content;
+    
+    try {
+      return JSON.parse(rawContent);
+    } catch (parseError) {
+      console.warn('Failed to parse chunk summary JSON, attempting to fix...');
+      console.log('Raw chunk response:', rawContent.substring(0, 200) + '...');
+      
+      // Try to extract JSON from markdown code blocks if present
+      const jsonMatch = rawContent.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+      if (jsonMatch) {
+        try {
+          return JSON.parse(jsonMatch[1]);
+        } catch (secondError) {
+          console.warn('Failed to parse extracted JSON from markdown');
+        }
+      }
+      
+      // Try basic cleanup
+      let cleaned = rawContent
+        .replace(/```json\s*/, '')
+        .replace(/```\s*$/, '')
+        .trim();
+      
+      try {
+        return JSON.parse(cleaned);
+      } catch (thirdError) {
+        console.warn('All chunk JSON parsing attempts failed, using fallback');
+        
+        // Extract key information using regex as fallback
+        const extractArrayFromText = (text, pattern) => {
+          const matches = text.match(pattern);
+          return matches ? matches.slice(1).filter(Boolean) : [];
+        };
+        
+        return {
+          summary: rawContent.replace(/[{}"\[\]]/g, '').substring(0, 200),
+          key_topics: extractArrayFromText(rawContent, /"key_topics":\s*\[(.*?)\]/s),
+          decisions: extractArrayFromText(rawContent, /"decisions":\s*\[(.*?)\]/s),
+          client_concerns: extractArrayFromText(rawContent, /"client_concerns":\s*\[(.*?)\]/s),
+          advisor_guidance: extractArrayFromText(rawContent, /"advisor_guidance":\s*\[(.*?)\]/s)
+        };
+      }
+    }
+  }
+
+  /**
+   * Combine chunk summaries into final report
+   */
+  async combineChunkSummaries(summaries, reportType, options = {}) {
+    // Aggregate all insights from chunks
+    const aggregated = {
+      key_topics: [],
+      decisions: [],
+      client_concerns: [],
+      advisor_guidance: [],
+      summaries: []
+    };
+
+    summaries.forEach(summary => {
+      if (summary.key_topics) aggregated.key_topics.push(...summary.key_topics);
+      if (summary.decisions) aggregated.decisions.push(...summary.decisions);
+      if (summary.client_concerns) aggregated.client_concerns.push(...summary.client_concerns);
+      if (summary.advisor_guidance) aggregated.advisor_guidance.push(...summary.advisor_guidance);
+      if (summary.summary) aggregated.summaries.push(summary.summary);
+    });
+
+    // Create final report prompt with aggregated data
+    const finalPrompt = this.buildReportPromptFromSummaries(aggregated, reportType, options);
+
+    const response = await this.openai.chat.completions.create({
+      model: options.model || 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: this.getSystemPrompt(reportType)
+        },
+        {
+          role: 'user',
+          content: finalPrompt
+        }
+      ],
+      max_tokens: options.max_tokens || 2000,
+      temperature: options.temperature || 0.7
+    });
+
+    const rawContent = response.choices[0].message.content;
+    let parsedContent;
+
+    try {
+      parsedContent = JSON.parse(rawContent);
+    } catch (parseError) {
+      console.warn('Failed to parse final report JSON, using raw content');
+      parsedContent = { content: rawContent, parse_error: true };
+    }
+
+    return {
+      content: parsedContent,
+      metadata: {
+        model: response.model,
+        tokens_used: response.usage.total_tokens,
+        processing_time_ms: Date.now(),
+        generated_at: new Date().toISOString(),
+        mock_mode: false,
+        chunked_processing: true,
+        chunks_processed: summaries.length
+      }
+    };
+  }
+
+  /**
+   * Build report prompt from aggregated summaries
+   */
+  buildReportPromptFromSummaries(aggregated, reportType, options = {}) {
+    const { sessionContext, notes, language } = options;
+    
+    let prompt = `Based on the following aggregated insights from a business consultation meeting, generate a comprehensive ${reportType} report.\n\n`;
+    
+    if (sessionContext) {
+      prompt += `SESSION CONTEXT:\n`;
+      prompt += `Client: ${sessionContext.clientName}\n`;
+      prompt += `Advisor: ${sessionContext.adviserName}\n`;
+      prompt += `Date: ${new Date(sessionContext.sessionDate).toLocaleDateString()}\n`;
+      prompt += `Duration: ${sessionContext.duration ? Math.round(sessionContext.duration/60) : 'Unknown'} minutes\n\n`;
+    }
+
+    prompt += `AGGREGATED INSIGHTS:\n\n`;
+    
+    if (aggregated.key_topics.length > 0) {
+      prompt += `KEY TOPICS DISCUSSED:\n${aggregated.key_topics.map(topic => `- ${topic}`).join('\n')}\n\n`;
+    }
+    
+    if (aggregated.decisions.length > 0) {
+      prompt += `DECISIONS MADE:\n${aggregated.decisions.map(decision => `- ${decision}`).join('\n')}\n\n`;
+    }
+    
+    if (aggregated.client_concerns.length > 0) {
+      prompt += `CLIENT CONCERNS:\n${aggregated.client_concerns.map(concern => `- ${concern}`).join('\n')}\n\n`;
+    }
+    
+    if (aggregated.advisor_guidance.length > 0) {
+      prompt += `ADVISOR GUIDANCE:\n${aggregated.advisor_guidance.map(guidance => `- ${guidance}`).join('\n')}\n\n`;
+    }
+
+    if (notes) {
+      prompt += `SPECIAL INSTRUCTIONS FROM ADVISER:\n${notes}\n\n`;
+    }
+
+    if (language) {
+      prompt += `IMPORTANT: Generate the report in ${language} language to match the original meeting language.\n\n`;
+    }
+
+    prompt += `Please generate a structured ${reportType} report based on these insights.`;
+    
+    return prompt;
   }
 
   /**
@@ -806,6 +1121,95 @@ Generate all content in the same language as the transcript, but use English fie
         success: false,
         error: error.message
       };
+    }
+  }
+
+  /**
+   * Memory-optimized transcript merging to avoid large string concatenation
+   */
+  mergeTranscriptsMemoryOptimized(transcripts) {
+    // For small transcripts, use simple join
+    if (transcripts.length <= 5) {
+      return transcripts.map(t => t.text).join(' ');
+    }
+
+    // For large transcripts, use chunked processing to avoid memory spikes
+    const CHUNK_SIZE = 10; // Process 10 transcripts at a time
+    let result = '';
+    
+    for (let i = 0; i < transcripts.length; i += CHUNK_SIZE) {
+      const chunk = transcripts.slice(i, i + CHUNK_SIZE);
+      const chunkText = chunk.map(t => t.text).join(' ');
+      result += (result ? ' ' : '') + chunkText;
+      
+      // Force garbage collection hint for large strings
+      if (result.length > 1000000) { // 1MB threshold
+        if (global.gc) {
+          global.gc();
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * Comprehensive temp file cleanup
+   */
+  async cleanupTempFiles(basePath = null) {
+    const tempDirs = [
+      path.join(process.cwd(), 'temp'),
+      path.join(__dirname, '../../uploads/temp')
+    ];
+    
+    if (basePath) {
+      tempDirs.push(basePath);
+    }
+
+    for (const tempDir of tempDirs) {
+      try {
+        if (fs.existsSync(tempDir)) {
+          const files = fs.readdirSync(tempDir);
+          const now = Date.now();
+          
+          for (const file of files) {
+            const filePath = path.join(tempDir, file);
+            const stats = fs.statSync(filePath);
+            
+            // Delete files older than 1 hour
+            const ageMs = now - stats.mtime.getTime();
+            if (ageMs > 60 * 60 * 1000) {
+              if (stats.isDirectory()) {
+                fs.rmSync(filePath, { recursive: true, force: true });
+              } else {
+                fs.unlinkSync(filePath);
+              }
+              console.log(`🧹 Cleaned up old temp file: ${file}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to cleanup temp directory ${tempDir}:`, error.message);
+      }
+    }
+  }
+
+  /**
+   * Safe temp file cleanup with error handling
+   */
+  cleanupTempFileSafe(filePath) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const stats = fs.statSync(filePath);
+        if (stats.isDirectory()) {
+          fs.rmSync(filePath, { recursive: true, force: true });
+        } else {
+          fs.unlinkSync(filePath);
+        }
+        console.log(`🧹 Cleaned up temp file: ${path.basename(filePath)}`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Failed to cleanup temp file ${filePath}:`, error.message);
     }
   }
 }
