@@ -76,9 +76,9 @@ class OpenAIService {
 
       console.log(`📁 File size: ${fileSizeInMB.toFixed(2)}MB`);
 
-      // NEW: Simple size check - if > 10MB, use chunking (testing threshold)
-      if (fileSizeInMB > 10) {
-        console.log(`📦 Large file detected, using chunking...`);
+      // Use chunking for all files > 5MB to prevent OOM crashes
+      if (fileSizeInMB > 5) {
+        console.log(`📦 Large file detected (${fileSizeInMB.toFixed(2)}MB), using chunking...`);
         return await this.transcribeWithChunking(tempFilePath, fileName, options);
       }
 
@@ -101,11 +101,23 @@ class OpenAIService {
       }
 
       const startTime = Date.now();
+      
+      // Monitor memory before API call
+      const memBefore = process.memoryUsage();
+      console.log(`💾 Memory before transcription: ${Math.round(memBefore.heapUsed / 1024 / 1024)}MB`);
 
       // Call OpenAI Whisper API
       const response = await this.openai.audio.transcriptions.create(transcriptionOptions);
 
       const duration = Date.now() - startTime;
+      
+      // Monitor memory after API call and force cleanup
+      const memAfter = process.memoryUsage();
+      console.log(`💾 Memory after transcription: ${Math.round(memAfter.heapUsed / 1024 / 1024)}MB`);
+      
+      if (global.gc) {
+        global.gc();
+      }
 
       // Return structured response
       return {
