@@ -186,10 +186,14 @@ class OpenAIService {
         });
       }
       
-      // Transcribe chunks sequentially (simple, reliable)
+      // Transcribe chunks sequentially with aggressive memory management
       const transcripts = [];
       for (let i = 0; i < chunks.length; i++) {
         console.log(`🎵 Transcribing chunk ${i + 1}/${chunks.length}...`);
+        
+        // Log memory before chunk processing
+        const memBefore = process.memoryUsage();
+        console.log(`💾 Memory before chunk ${i + 1}: ${Math.round(memBefore.heapUsed / 1024 / 1024)}MB`);
         
         // Emit chunk progress event
         if (sessionId && socketService) {
@@ -206,6 +210,17 @@ class OpenAIService {
           const chunkResult = await this.transcribeSingleChunk(chunks[i]);
           transcripts.push(chunkResult);
           
+          // Clear chunk file reference immediately
+          chunks[i] = null;
+          
+          // Force garbage collection after each chunk
+          if (global.gc) {
+            global.gc();
+          }
+          
+          const memAfter = process.memoryUsage();
+          console.log(`💾 Memory after chunk ${i + 1}: ${Math.round(memAfter.heapUsed / 1024 / 1024)}MB`);
+          
           // Emit chunk completed event
           if (sessionId && socketService) {
             socketService.sendToSession(sessionId, 'transcription_chunk_completed', {
@@ -216,8 +231,22 @@ class OpenAIService {
               messageKey: 'chunkCompleted'
             });
           }
+          
+          // Emergency memory check
+          if (memAfter.heapUsed > 200 * 1024 * 1024) { // 200MB threshold
+            console.warn(`⚠️ High memory usage after chunk ${i + 1}: ${Math.round(memAfter.heapUsed / 1024 / 1024)}MB`);
+            // Force more aggressive cleanup
+            if (global.gc) {
+              global.gc();
+              global.gc(); // Double GC for aggressive cleanup
+            }
+          }
+          
         } catch (chunkError) {
           console.error(`❌ Chunk ${i + 1} failed:`, chunkError.message);
+          
+          // Clear failed chunk reference
+          chunks[i] = null;
           
           // Emit chunk failed event
           if (sessionId && socketService) {
@@ -238,6 +267,9 @@ class OpenAIService {
           });
         }
       }
+      
+      // Clear chunks array completely
+      chunks.length = 0;
       
       // Memory-optimized merge - avoid large string concatenation
       const successfulTranscripts = transcripts.filter(t => !t.failed);
@@ -1128,27 +1160,53 @@ Generate all content in the same language as the transcript, but use English fie
    * Memory-optimized transcript merging to avoid large string concatenation
    */
   mergeTranscriptsMemoryOptimized(transcripts) {
-    // For small transcripts, use simple join
-    if (transcripts.length <= 5) {
-      return transcripts.map(t => t.text).join(' ');
+    console.log(`🔄 Merging ${transcripts.length} transcripts with memory optimization...`);
+    
+    // For very small transcripts, use simple join
+    if (transcripts.length <= 3) {
+      const result = transcripts.map(t => t.text || '').join(' ');
+      console.log(`✅ Simple merge completed: ${result.length} chars`);
+      return result;
     }
 
-    // For large transcripts, use chunked processing to avoid memory spikes
-    const CHUNK_SIZE = 10; // Process 10 transcripts at a time
-    let result = '';
+    // Use streaming approach with smaller chunks and aggressive cleanup
+    const CHUNK_SIZE = 5; // Smaller chunks to reduce memory pressure
+    const chunks = [];
     
+    // Process in smaller batches
     for (let i = 0; i < transcripts.length; i += CHUNK_SIZE) {
-      const chunk = transcripts.slice(i, i + CHUNK_SIZE);
-      const chunkText = chunk.map(t => t.text).join(' ');
-      result += (result ? ' ' : '') + chunkText;
+      const batch = transcripts.slice(i, i + CHUNK_SIZE);
+      const batchText = batch.map(t => (t.text || '').trim()).filter(Boolean).join(' ');
       
-      // Force garbage collection hint for large strings
-      if (result.length > 1000000) { // 1MB threshold
-        if (global.gc) {
-          global.gc();
-        }
+      if (batchText.length > 0) {
+        chunks.push(batchText);
+      }
+      
+      // Clear batch references immediately
+      batch.length = 0;
+      
+      // Force garbage collection every few batches
+      if (i % (CHUNK_SIZE * 2) === 0 && global.gc) {
+        global.gc();
       }
     }
+    
+    // Final merge with memory monitoring
+    const startMemory = process.memoryUsage().heapUsed;
+    console.log(`💾 Starting final merge with ${chunks.length} chunks, memory: ${Math.round(startMemory / 1024 / 1024)}MB`);
+    
+    const result = chunks.join(' ');
+    
+    // Clear chunks array immediately
+    chunks.length = 0;
+    
+    // Force cleanup after merge
+    if (global.gc) {
+      global.gc();
+    }
+    
+    const endMemory = process.memoryUsage().heapUsed;
+    console.log(`✅ Merge completed: ${result.length} chars, memory: ${Math.round(endMemory / 1024 / 1024)}MB`);
     
     return result;
   }

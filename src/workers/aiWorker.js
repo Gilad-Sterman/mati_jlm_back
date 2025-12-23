@@ -20,6 +20,10 @@ class AIWorker {
       return;
     }
     
+    // Aggressive startup cleanup to handle cached data
+    console.log('🧹 Performing startup cleanup...');
+    await this.startupCleanup();
+    
     // Check if OpenAI is configured
     if (!openaiService.isConfigured()) {
       console.error('❌ OpenAI API key not configured. Set OPENAI_API_KEY environment variable.');
@@ -606,9 +610,9 @@ class AIWorker {
       console.log(`💾 Memory: ${heapUsedMB}MB used, ${heapTotalMB}MB total, ${rssMB}MB RSS`);
     }
     
-    // Trigger cleanup if memory usage is high
-    const MEMORY_WARNING_THRESHOLD = 200; // 200MB
-    const MEMORY_CRITICAL_THRESHOLD = 240; // 240MB
+    // Trigger cleanup if memory usage is high (conservative for Render's 512MB limit)
+    const MEMORY_WARNING_THRESHOLD = 150; // 150MB (30% of 512MB)
+    const MEMORY_CRITICAL_THRESHOLD = 200; // 200MB (40% of 512MB)
     
     if (heapUsedMB > MEMORY_CRITICAL_THRESHOLD) {
       console.warn(`🚨 CRITICAL: Memory usage ${heapUsedMB}MB exceeds ${MEMORY_CRITICAL_THRESHOLD}MB threshold!`);
@@ -642,6 +646,56 @@ class AIWorker {
     const memUsage = process.memoryUsage();
     const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
     console.log(`🧹 Memory after cleanup: ${heapUsedMB}MB`);
+  }
+
+  /**
+   * Startup cleanup to handle cached data and memory issues
+   */
+  async startupCleanup() {
+    try {
+      const startMemory = process.memoryUsage();
+      console.log(`💾 Startup memory: ${Math.round(startMemory.heapUsed / 1024 / 1024)}MB heap, ${Math.round(startMemory.rss / 1024 / 1024)}MB RSS`);
+      
+      // Clean up temp files aggressively
+      const openaiService = require('../services/openaiService');
+      await openaiService.cleanupTempFiles();
+      
+      // Force multiple garbage collections to clear any cached data
+      if (global.gc) {
+        console.log('♻️ Performing aggressive startup garbage collection...');
+        for (let i = 0; i < 3; i++) {
+          global.gc();
+          await this.sleep(100);
+        }
+      }
+      
+      // Clear any Node.js module cache for non-core modules (if needed)
+      const moduleKeys = Object.keys(require.cache);
+      let clearedCount = 0;
+      
+      for (const key of moduleKeys) {
+        // Only clear temp/upload related modules to avoid breaking the app
+        if (key.includes('/temp/') || key.includes('/uploads/')) {
+          delete require.cache[key];
+          clearedCount++;
+        }
+      }
+      
+      if (clearedCount > 0) {
+        console.log(`🧹 Cleared ${clearedCount} cached modules`);
+      }
+      
+      const endMemory = process.memoryUsage();
+      console.log(`💾 After cleanup: ${Math.round(endMemory.heapUsed / 1024 / 1024)}MB heap, ${Math.round(endMemory.rss / 1024 / 1024)}MB RSS`);
+      
+      const memoryReduction = startMemory.heapUsed - endMemory.heapUsed;
+      if (memoryReduction > 0) {
+        console.log(`✅ Freed ${Math.round(memoryReduction / 1024 / 1024)}MB during startup cleanup`);
+      }
+      
+    } catch (error) {
+      console.warn('⚠️ Startup cleanup failed:', error.message);
+    }
   }
 
   /**
