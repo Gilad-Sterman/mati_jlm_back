@@ -87,17 +87,26 @@ class OpenAIService {
         throw new Error(`File size (${fileSizeInMB.toFixed(2)}MB) exceeds OpenAI's 25MB limit.`);
       }
 
-      // Prepare transcription options
+      // Prepare transcription options - only include safe OpenAI API options
       const transcriptionOptions = {
         file: fs.createReadStream(tempFilePath),
         model: 'whisper-1',
-        response_format: 'verbose_json', // Get timestamps and other metadata
-        ...options
+        response_format: 'verbose_json' // Get timestamps and other metadata
       };
 
-      // Add language if specified
+      // Add language if specified (safe to include)
       if (options.language) {
         transcriptionOptions.language = options.language;
+      }
+
+      // Add prompt if specified (safe to include)
+      if (options.prompt) {
+        transcriptionOptions.prompt = options.prompt;
+      }
+
+      // Add temperature if specified (safe to include)
+      if (options.temperature !== undefined) {
+        transcriptionOptions.temperature = options.temperature;
       }
 
       const startTime = Date.now();

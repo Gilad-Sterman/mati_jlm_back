@@ -1,4 +1,5 @@
 const { supabaseAdmin } = require('../config/database');
+const SalesforceService = require('./salesforceService');
 
 class ReportService {
   /**
@@ -237,14 +238,15 @@ class ReportService {
     try {
       console.log(`📤 Starting export process for client report ${reportId}`);
 
-      // Get the report with session information
+      // Get the report with session information including adviser details
       const { data: reportWithSession, error: reportError } = await supabaseAdmin
         .from('reports')
         .select(`
           *,
           session:sessions(
-            id, title, client_id, adviser_id, status,
-            client:clients(id, name, email, metadata)
+            id, title, client_id, adviser_id, status, created_at, updated_at,
+            client:clients(id, name, email, phone, metadata, created_at),
+            adviser:users(id, name, email, role)
           )
         `)
         .eq('id', reportId)
@@ -322,6 +324,7 @@ class ReportService {
       // Step 4: Save PDF file from frontend
       let pdfUrl = null;
       let pdfGenerated = false;
+      let pdfFilePath = null; // Track file path for cleanup
       
       if (pdfFile) {
         try {
@@ -338,6 +341,12 @@ class ReportService {
           
           const filename = `client-report-${reportId}-${Date.now()}.pdf`;
           const filepath = path.join(uploadsDir, filename);
+          pdfFilePath = filepath; // Store for cleanup
+          
+          // Validate PDF buffer before saving
+          console.log(`📋 PDF file info: size=${pdfFile.size}, mimetype=${pdfFile.mimetype}`);
+          console.log(`📋 PDF buffer size: ${pdfFile.buffer.length} bytes`);
+          console.log(`📋 PDF buffer start: ${pdfFile.buffer.slice(0, 8).toString()}`);
           
           // Save the PDF file
           fs.writeFileSync(filepath, pdfFile.buffer);
@@ -354,32 +363,63 @@ class ReportService {
         }
       }
       
-      // TODO: Future implementations:
-      // Step 5: Send email to client with PDF attachment
-      // await EmailService.sendClientReport({
-      //   clientEmail: session.client.email,
-      //   clientName: session.client.name,
-      //   reportTitle: report.title,
-      //   pdfUrl: pdfUrl,
-      //   sessionTitle: session.title
-      // });
-      //
-      // Step 6: Update external CRM system
-      // await CRMService.updateClientSession({
-      //   clientId: session.client_id,
-      //   sessionId: session.id,
-      //   status: 'completed',
-      //   reportUrl: pdfUrl,
-      //   completedAt: new Date()
-      // });
+      // Step 5: Send email to client via Make.com and update Salesforce
+      let emailSent = false;
+      let salesforceUpdated = false;
+      let emailError = null;
+      
+      try {
+        console.log(`📧 Sending client report via Make.com...`);
+        
+        const emailResult = await SalesforceService.sendClientReport(
+          report,           // Report data
+          session,          // Session data  
+          session.client,   // Client data
+          pdfUrl,           // PDF URL (if available)
+          pdfFile ? pdfFile.buffer : null  // PDF buffer for direct sending
+        );
+        
+        if (emailResult.success) {
+          emailSent = true;
+          salesforceUpdated = emailResult.salesforce_updated || false;
+          console.log(`✅ Client report sent successfully: ${emailResult.message}`);
+          
+          if (salesforceUpdated) {
+            console.log(`✅ Salesforce updated successfully`);
+          }
+        } else {
+          emailError = emailResult.error;
+          console.warn(`⚠️ Failed to send client report: ${emailResult.error}`);
+        }
+        
+      } catch (error) {
+        emailError = error.message;
+        console.error(`❌ Error sending client report via Make.com:`, error);
+        // Don't fail the entire export if email sending fails
+      }
+
+      // Step 6: Cleanup temporary PDF file after email attempt
+      if (pdfFilePath && pdfGenerated) {
+        try {
+          const fs = require('fs');
+          if (fs.existsSync(pdfFilePath)) {
+            fs.unlinkSync(pdfFilePath);
+            console.log(`🗑️ Cleaned up temporary PDF file: ${pdfFilePath}`);
+          }
+        } catch (cleanupError) {
+          console.warn(`⚠️ Failed to cleanup PDF file ${pdfFilePath}:`, cleanupError.message);
+          // Don't fail the export if cleanup fails
+        }
+      }
 
       return {
         report: approvedReport,
         session: updatedSession,
         pdf_generated: pdfGenerated,
         pdf_url: pdfUrl,
-        email_sent: false,    // TODO: Set to true when email sending is implemented
-        crm_updated: false    // TODO: Set to true when CRM integration is implemented
+        email_sent: emailSent,
+        salesforce_updated: salesforceUpdated,
+        email_error: emailError
       };
 
     } catch (error) {
