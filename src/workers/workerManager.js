@@ -52,13 +52,32 @@ class WorkerManager {
   static shouldRunEmbedded() {
     // Run embedded if:
     // 1. WORKER_MODE is set to 'embedded'
-    // 2. NODE_ENV is development (for easier local development)
-    // 3. ENABLE_EMBEDDED_WORKER is true
+    // 2. ENABLE_EMBEDDED_WORKER is true
+    // Note: Removed NODE_ENV=development auto-embedded to allow external worker testing in dev
     return (
       process.env.WORKER_MODE === 'embedded' ||
-      process.env.NODE_ENV === 'development' ||
       process.env.ENABLE_EMBEDDED_WORKER === 'true'
     );
+  }
+
+  /**
+   * Check if external worker is configured
+   */
+  static isExternalWorkerConfigured() {
+    return !!(process.env.WORKER_API_KEY && !this.shouldRunEmbedded());
+  }
+
+  /**
+   * Get worker configuration info
+   */
+  static getWorkerConfig() {
+    return {
+      useEmbedded: this.shouldRunEmbedded(),
+      hasWorkerApiKey: !!process.env.WORKER_API_KEY,
+      workerMode: process.env.WORKER_MODE || 'auto',
+      enableEmbeddedWorker: process.env.ENABLE_EMBEDDED_WORKER,
+      environment: process.env.NODE_ENV || 'development'
+    };
   }
 }
 

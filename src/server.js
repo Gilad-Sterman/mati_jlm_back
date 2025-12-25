@@ -108,7 +108,16 @@ server.listen(PORT, async () => {
       console.error('❌ Failed to start embedded worker:', error);
     }
   } else {
-    console.log('ℹ️ Worker will run as separate process. Start with: npm run worker');
+    const config = WorkerManager.getWorkerConfig();
+    console.log('🔄 External worker mode enabled');
+    console.log(`   WORKER_MODE: ${config.workerMode}`);
+    console.log(`   ENABLE_EMBEDDED_WORKER: ${config.enableEmbeddedWorker}`);
+    console.log(`   Has WORKER_API_KEY: ${config.hasWorkerApiKey}`);
+    if (config.hasWorkerApiKey) {
+      console.log('✅ External worker configured - webhook endpoints ready at /api/worker/*');
+    } else {
+      console.log('⚠️ WORKER_API_KEY not set - external worker cannot authenticate');
+    }
   }
 });
 

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const WorkerManager = require('../workers/workerManager');
+const WorkerController = require('../controllers/workerController');
 
 // Get worker status (admin only)
 router.get('/status', authenticate, requireAdmin, (req, res) => {
@@ -29,5 +30,19 @@ router.get('/status', authenticate, requireAdmin, (req, res) => {
     });
   }
 });
+
+/**
+ * External Worker Webhook Endpoints
+ * These endpoints are called by the external worker service
+ */
+
+// Progress webhook endpoint - receives progress updates from worker
+router.post('/progress', WorkerController.receiveProgress);
+
+// Health check endpoint - allows worker to validate connection
+router.post('/health', WorkerController.healthCheck);
+
+// Worker configuration endpoint - for debugging and monitoring
+router.get('/config', WorkerController.getWorkerConfig);
 
 module.exports = router;
