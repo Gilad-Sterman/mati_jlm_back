@@ -341,6 +341,14 @@ class ReportService {
             pdfGenerated = true;
             
             console.log(`✅ PDF uploaded to Cloudinary: ${pdfUrl}`);
+            
+            // Save PDF URL to session.file_url
+            await supabaseAdmin
+              .from('sessions')
+              .update({ file_url: pdfUrl })
+              .eq('id', session.id);
+            
+            console.log(`✅ PDF URL saved to session.file_url: ${pdfUrl}`);
           } else {
             console.error('Failed to upload PDF to Cloudinary:', uploadResult.error);
             throw new Error(`Cloudinary upload failed: ${uploadResult.error}`);

@@ -287,14 +287,15 @@ class CloudinaryService {
       const timestamp = Date.now();
       const publicId = `report_${reportId}_${timestamp}`;
 
-      // Default options for PDF uploads
+      // Default options for PDF uploads - save as JPG images to bypass restrictions
       const defaultOptions = {
         folder: 'mati/reports',
         public_id: publicId,
-        resource_type: 'image', // PDFs are uploaded as image resource type in Cloudinary
-        format: 'pdf',
+        resource_type: 'image',
+        format: 'jpg', // Convert PDF to JPG image format
         quality: 'auto',
-        flags: 'attachment' // Ensures PDF downloads instead of displaying in browser
+        pages: true, // Convert all PDF pages
+        density: 150 // Good quality for viewing
       };
 
       const uploadOptions = { ...defaultOptions, ...options };
@@ -331,11 +332,16 @@ class CloudinaryService {
         }
       }
 
+      // Use regular Cloudinary URL since we're now saving as JPG images
+      const imageUrl = result.secure_url;
+      
+      console.log(`�️ Generated image URL: ${imageUrl}`);
+
       return {
         success: true,
         data: {
           public_id: result.public_id,
-          secure_url: result.secure_url,
+          secure_url: imageUrl, // Use image URL instead of proxy URL
           url: result.url,
           format: result.format,
           resource_type: result.resource_type,
