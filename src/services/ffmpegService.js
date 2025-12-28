@@ -51,11 +51,13 @@ class FFmpegService {
         outputPath
       ];
       
-      // If files have different formats, use re-encoding instead
-      const needsReencoding = await this.checkIfReencodingNeeded(filePaths);
+      // If files have different formats or output is MP3, use re-encoding instead
+      const needsReencoding = await this.checkIfReencodingNeeded(filePaths, outputPath);
       if (needsReencoding) {
-        console.log('📦 Files have different formats, re-encoding to MP3...');
-        ffmpegArgs.splice(-2, 1, '-c:a', 'mp3', '-b:a', '64k'); // Replace '-c', 'copy' with MP3 encoding
+        console.log('📦 Re-encoding to MP3 for compatibility...');
+        // Replace '-c', 'copy' with MP3 encoding
+        const copyIndex = ffmpegArgs.indexOf('copy');
+        ffmpegArgs.splice(copyIndex - 1, 2, '-c:a', 'mp3', '-b:a', '64k');
       }
       
       const result = await this.runFFmpegCommand(ffmpegArgs);
@@ -102,8 +104,13 @@ class FFmpegService {
   /**
    * Check if files need re-encoding (different formats/codecs)
    */
-  static async checkIfReencodingNeeded(filePaths) {
-    // For simplicity, assume re-encoding is needed if files have different extensions
+  static async checkIfReencodingNeeded(filePaths, outputPath) {
+    // Always re-encode if output is MP3 (ensures codec compatibility)
+    if (outputPath && outputPath.endsWith('.mp3')) {
+      return true;
+    }
+    
+    // Also check for mixed input formats
     const extensions = filePaths.map(filePath => path.extname(filePath).toLowerCase());
     const uniqueExtensions = [...new Set(extensions)];
     

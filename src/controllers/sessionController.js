@@ -326,7 +326,7 @@ class SessionController {
       // Clean up temporary files on error
       try {
         // Clean up FFmpeg concatenation temp directory if used
-        if (tempDir) {
+        if (typeof tempDir !== 'undefined' && tempDir) {
           FFmpegService.cleanupTempFiles(tempDir);
         }
         
