@@ -273,6 +273,103 @@ class CloudinaryService {
   }
 
   /**
+   * Upload PDF report to Cloudinary in reports folder
+   */
+  static async uploadPdfReport(pdfFile, reportId, sessionId, options = {}) {
+    try {
+      // Check if Cloudinary is configured
+      const configStatus = this.getConfigStatus();
+      if (!configStatus.isConfigured) {
+        throw new Error(`Cloudinary not configured. Missing: ${configStatus.missing.join(', ')}`);
+      }
+
+      // Generate unique filename for the PDF
+      const timestamp = Date.now();
+      const publicId = `report_${reportId}_${timestamp}`;
+
+      // Default options for PDF uploads
+      const defaultOptions = {
+        folder: 'mati/reports',
+        public_id: publicId,
+        resource_type: 'image', // PDFs are uploaded as image resource type in Cloudinary
+        format: 'pdf',
+        quality: 'auto',
+        flags: 'attachment' // Ensures PDF downloads instead of displaying in browser
+      };
+
+      const uploadOptions = { ...defaultOptions, ...options };
+
+      console.log(`📄 Uploading PDF report ${reportId} to Cloudinary...`);
+
+      let result;
+      
+      // Handle different input types
+      if (typeof pdfFile === 'string') {
+        // File path provided
+        result = await cloudinary.uploader.upload(pdfFile, uploadOptions);
+      } else if (pdfFile.path) {
+        // Multer file object with path
+        result = await cloudinary.uploader.upload(pdfFile.path, uploadOptions);
+      } else if (pdfFile.buffer) {
+        // Buffer provided - convert to base64
+        const base64Data = `data:application/pdf;base64,${pdfFile.buffer.toString('base64')}`;
+        result = await cloudinary.uploader.upload(base64Data, uploadOptions);
+      } else {
+        throw new Error('Invalid PDF file format. Expected file path, multer file object, or buffer.');
+      }
+
+      const fileSizeMB = (result.bytes / (1024 * 1024)).toFixed(2);
+      console.log(`✅ PDF uploaded successfully: ${fileSizeMB}MB | URL: ${result.secure_url}`);
+
+      // Clean up temporary file if it exists
+      if (pdfFile.path) {
+        try {
+          fs.unlinkSync(pdfFile.path);
+          console.log(`🗑️ Cleaned up temporary PDF file: ${pdfFile.path}`);
+        } catch (cleanupError) {
+          console.warn('Failed to clean up temp PDF file:', cleanupError.message);
+        }
+      }
+
+      return {
+        success: true,
+        data: {
+          public_id: result.public_id,
+          secure_url: result.secure_url,
+          url: result.url,
+          format: result.format,
+          resource_type: result.resource_type,
+          bytes: result.bytes,
+          pages: result.pages, // Number of pages in PDF
+          created_at: result.created_at,
+          report_id: reportId,
+          session_id: sessionId,
+          file_info: {
+            size_mb: parseFloat(fileSizeMB),
+            original_filename: pdfFile.originalname || `report_${reportId}.pdf`
+          }
+        }
+      };
+    } catch (error) {
+      console.error(`❌ Failed to upload PDF report ${reportId}:`, error);
+      
+      // Clean up temporary file on error
+      if (pdfFile.path) {
+        try {
+          fs.unlinkSync(pdfFile.path);
+        } catch (cleanupError) {
+          console.warn('Failed to clean up temp PDF file after error:', cleanupError.message);
+        }
+      }
+      
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
    * Delete file from Cloudinary
    */
   static async deleteFile(publicId, resourceType = 'auto') {

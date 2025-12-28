@@ -321,45 +321,34 @@ class ReportService {
       console.log(`✅ Export process completed for report ${reportId}`);
       console.log(`📧 Session ${session.id} marked as completed`);
 
-      // Step 4: Save PDF file from frontend
+      // Step 4: Upload PDF file to Cloudinary
       let pdfUrl = null;
       let pdfGenerated = false;
-      let pdfFilePath = null; // Track file path for cleanup
+      let cloudinaryPublicId = null;
       
       if (pdfFile) {
         try {
-          // TODO: Upload PDF to cloud storage (Cloudinary, AWS S3, etc.)
-          // For now, we'll save it locally or use a simple storage solution
-          const fs = require('fs');
-          const path = require('path');
-          const uploadsDir = path.join(__dirname, '../../uploads/pdfs');
+          const CloudinaryService = require('./cloudinaryService');
           
-          // Ensure uploads directory exists
-          if (!fs.existsSync(uploadsDir)) {
-            fs.mkdirSync(uploadsDir, { recursive: true });
+          console.log(`📋 PDF file info: size=${pdfFile.size}, mimetype=${pdfFile.mimetype}`);
+          
+          // Upload PDF to Cloudinary in mati/reports folder
+          const uploadResult = await CloudinaryService.uploadPdfReport(pdfFile, reportId, session.id);
+          
+          if (uploadResult.success) {
+            pdfUrl = uploadResult.data.secure_url;
+            cloudinaryPublicId = uploadResult.data.public_id;
+            pdfGenerated = true;
+            
+            console.log(`✅ PDF uploaded to Cloudinary: ${pdfUrl}`);
+          } else {
+            console.error('Failed to upload PDF to Cloudinary:', uploadResult.error);
+            throw new Error(`Cloudinary upload failed: ${uploadResult.error}`);
           }
           
-          const filename = `client-report-${reportId}-${Date.now()}.pdf`;
-          const filepath = path.join(uploadsDir, filename);
-          pdfFilePath = filepath; // Store for cleanup
-          
-          // Validate PDF buffer before saving
-          console.log(`📋 PDF file info: size=${pdfFile.size}, mimetype=${pdfFile.mimetype}`);
-          console.log(`📋 PDF buffer size: ${pdfFile.buffer.length} bytes`);
-          console.log(`📋 PDF buffer start: ${pdfFile.buffer.slice(0, 8).toString()}`);
-          
-          // Save the PDF file
-          fs.writeFileSync(filepath, pdfFile.buffer);
-          
-          // For now, use local path as URL (in production, use cloud storage URL)
-          pdfUrl = `/uploads/pdfs/${filename}`;
-          pdfGenerated = true;
-          
-          console.log(`✅ PDF saved successfully: ${filepath}`);
-          
         } catch (pdfError) {
-          console.error('Failed to save PDF file:', pdfError);
-          // Don't fail the entire export if PDF save fails
+          console.error('Failed to upload PDF file:', pdfError);
+          // Don't fail the entire export if PDF upload fails
         }
       }
       
@@ -375,8 +364,8 @@ class ReportService {
           report,           // Report data
           session,          // Session data  
           session.client,   // Client data
-          pdfUrl,           // PDF URL (if available)
-          pdfFile ? pdfFile.buffer : null  // PDF buffer for direct sending
+          pdfUrl,           // PDF URL from Cloudinary (replaces buffer sending)
+          null              // No longer sending PDF buffer - using URL instead
         );
         
         if (emailResult.success) {
@@ -398,25 +387,15 @@ class ReportService {
         // Don't fail the entire export if email sending fails
       }
 
-      // Step 6: Cleanup temporary PDF file after email attempt
-      if (pdfFilePath && pdfGenerated) {
-        try {
-          const fs = require('fs');
-          if (fs.existsSync(pdfFilePath)) {
-            fs.unlinkSync(pdfFilePath);
-            console.log(`🗑️ Cleaned up temporary PDF file: ${pdfFilePath}`);
-          }
-        } catch (cleanupError) {
-          console.warn(`⚠️ Failed to cleanup PDF file ${pdfFilePath}:`, cleanupError.message);
-          // Don't fail the export if cleanup fails
-        }
-      }
+      // Step 6: No cleanup needed - Cloudinary handles file storage
+      // PDF is now stored permanently in Cloudinary and accessible via URL
 
       return {
         report: approvedReport,
         session: updatedSession,
         pdf_generated: pdfGenerated,
         pdf_url: pdfUrl,
+        cloudinary_public_id: cloudinaryPublicId,
         email_sent: emailSent,
         salesforce_updated: salesforceUpdated,
         email_error: emailError

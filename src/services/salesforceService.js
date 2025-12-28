@@ -72,41 +72,15 @@ class SalesforceService {
         return { success: false, error: 'Email webhook not configured' };
       }
 
-      // Encode PDF buffer as base64 if available
-      let pdfBase64 = null;
+      // Use PDF URL from Cloudinary instead of base64 encoding
       let pdfFilename = null;
-      let pdfMimeType = null;
       
-      if (pdfBuffer) {
-        try {
-          // Ensure we have a proper Buffer
-          const buffer = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
-          
-          // Validate PDF header to ensure it's a valid PDF
-          const pdfHeader = buffer.slice(0, 4).toString();
-          if (pdfHeader !== '%PDF') {
-            console.error('❌ Invalid PDF buffer - missing PDF header');
-            console.log('Buffer start:', buffer.slice(0, 20).toString('hex'));
-            throw new Error('Invalid PDF buffer');
-          }
-          
-          // Encode as base64 without any formatting
-          pdfBase64 = buffer.toString('base64');
-          pdfFilename = `client-report-${reportData.id}-${Date.now()}.pdf`;
-          pdfMimeType = 'application/pdf';
-          
-          console.log(`📎 PDF validated and encoded as base64 (${Math.round(pdfBase64.length / 1024)}KB)`);
-          console.log(`📎 PDF buffer size: ${buffer.length} bytes`);
-          console.log(`📎 Base64 length: ${pdfBase64.length} characters`);
-          console.log(`📎 PDF header: ${buffer.slice(0, 8).toString()}`);
-          
-        } catch (error) {
-          console.error('Failed to encode PDF as base64:', error);
-          // Fall back to URL if base64 encoding fails
-          pdfBase64 = null;
-          pdfFilename = null;
-          pdfMimeType = null;
-        }
+      if (pdfUrl) {
+        // Extract filename from Cloudinary URL or generate one
+        pdfFilename = `client-report-${reportData.id}-${Date.now()}.pdf`;
+        console.log(`📎 Using PDF URL from Cloudinary: ${pdfUrl}`);
+      } else {
+        console.warn('⚠️ No PDF URL provided - email will be sent without attachment');
       }
 
       // Prepare email webhook payload
@@ -144,31 +118,16 @@ class SalesforceService {
           id: reportData.id,
           type: reportData.type,
           content: reportData.content,
-          pdf_url: pdfUrl, // Keep URL as fallback
-          pdf_base64: pdfBase64, // Direct PDF content
-          pdf_filename: pdfFilename, // Filename for attachment
-          pdf_mime_type: pdfMimeType, // MIME type for proper attachment handling
+          pdf_url: pdfUrl, // Cloudinary URL for PDF download
+          pdf_filename: pdfFilename, // Filename for reference
           approved_at: new Date().toISOString()
         },
-        // Attachment format for Outlook (alternative structure)
-        attachment: pdfBase64 ? {
+        // PDF attachment info (URL-based instead of base64)
+        attachment: pdfUrl ? {
           name: pdfFilename,
-          data: pdfBase64,
-          type: pdfMimeType
+          url: pdfUrl,
+          type: 'application/pdf'
         } : null,
-        // Alternative attachment format (Microsoft Graph API style)
-        attachments: pdfBase64 ? [{
-          "@odata.type": "#microsoft.graph.fileAttachment",
-          "name": pdfFilename,
-          "contentType": pdfMimeType,
-          "contentBytes": pdfBase64
-        }] : [],
-        // Simple attachment format (basic email clients)
-        files: pdfBase64 ? [{
-          filename: pdfFilename,
-          data: pdfBase64,
-          mimetype: pdfMimeType
-        }] : [],
         // Metadata
         timestamp: new Date().toISOString(),
         action: 'send_client_report'
