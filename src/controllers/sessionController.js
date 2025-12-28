@@ -3,6 +3,7 @@ const CloudinaryService = require('../services/cloudinaryService');
 const ClientService = require('../services/clientService');
 const JobService = require('../services/jobService');
 const socketService = require('../services/socketService');
+const FFmpegService = require('../services/ffmpegService');
 
 class SessionController {
   /**
@@ -13,11 +14,11 @@ class SessionController {
       const userId = req.user.id;
       const { client_id, title, newClient, fileName } = req.body;
       
-      // Check if file was uploaded
-      if (!req.file) {
+      // Check if files were uploaded
+      if (!req.files || req.files.length === 0) {
         return res.status(400).json({
           success: false,
-          message: 'No file uploaded'
+          message: 'No files uploaded'
         });
       }
 
@@ -118,17 +119,20 @@ class SessionController {
         }
       }
 
-      // Use the fileName from form data (preserves UTF-8) or fallback to req.file.originalname
-      const actualFileName = fileName || req.file.originalname;
+      // Calculate total file info from multiple files
+      const totalFileSize = req.files.reduce((sum, file) => sum + file.size, 0);
+      const fileNames = req.files.map(file => file.originalname).join(', ');
+      const primaryFileName = fileName || req.files[0].originalname;
+      const primaryMimeType = req.files[0].mimetype;
       
-      // Create session in database with temporary file info (before Cloudinary upload)
+      // Create session in database with temporary file info (before concatenation and Cloudinary upload)
       const sessionData = {
         client_id: finalClientId,
         title: title?.trim() || null,
         file_url: null, // Will be updated after Cloudinary upload
-        file_name: actualFileName,
-        file_size: req.file.size,
-        file_type: req.file.mimetype,
+        file_name: req.files.length > 1 ? `${req.files.length} files: ${fileNames}` : primaryFileName,
+        file_size: totalFileSize,
+        file_type: primaryMimeType,
         status: 'uploading', // New status to indicate upload in progress
         duration: null // Will be updated after Cloudinary upload
       };
@@ -153,13 +157,13 @@ class SessionController {
       // Emit socket event that upload started
       socketService.sendToUser(userId, 'upload_started', {
         sessionId: session.id,
-        fileName: actualFileName,
-        fileSize: req.file.size,
-        message: 'File upload to cloud storage started'
+        fileName: req.files.length > 1 ? `${req.files.length} files` : primaryFileName,
+        fileSize: totalFileSize,
+        message: req.files.length > 1 ? 'Multiple files upload started' : 'File upload to cloud storage started'
       });
 
-      // Start background Cloudinary upload
-      SessionController.handleBackgroundUpload(session.id, req.file, userId, actualFileName);
+      // Start background file processing (concatenation + Cloudinary upload)
+      SessionController.handleBackgroundUpload(session.id, req.files, userId, primaryFileName);
 
     } catch (error) {
       res.status(500).json({
@@ -172,22 +176,64 @@ class SessionController {
   /**
    * Handle background file upload to Cloudinary with socket notifications
    */
-  static async handleBackgroundUpload(sessionId, file, userId, actualFileName) {
+  static async handleBackgroundUpload(sessionId, files, userId, actualFileName) {
     try {
       // Emit progress update
-      const progressSent = socketService.sendToUser(userId, 'upload_progress', {
+      socketService.sendToUser(userId, 'upload_progress', {
         sessionId,
         progress: 10,
-        message: 'Preparing file for upload...'
+        message: files.length > 1 ? 'Preparing files for concatenation...' : 'Preparing file for upload...'
       });
 
-      // Upload file to Cloudinary with compression
+      let finalFile;
+      let tempDir = null;
+
+      if (files.length > 1) {
+        // Concatenate multiple files using FFmpeg
+        socketService.sendToUser(userId, 'upload_progress', {
+          sessionId,
+          progress: 30,
+          message: `Concatenating ${files.length} files...`
+        });
+
+        const filePaths = files.map(file => file.path);
+        const concatenationResult = await FFmpegService.concatenateFiles(filePaths, `session_${sessionId}_merged.mp3`);
+        
+        if (!concatenationResult.success) {
+          throw new Error(`File concatenation failed: ${concatenationResult.error}`);
+        }
+
+        finalFile = {
+          path: concatenationResult.outputPath,
+          originalname: actualFileName,
+          mimetype: 'audio/mp3',
+          size: concatenationResult.outputSize
+        };
+        tempDir = concatenationResult.tempDir;
+
+        socketService.sendToUser(userId, 'upload_progress', {
+          sessionId,
+          progress: 50,
+          message: 'Files concatenated, uploading to cloud...'
+        });
+      } else {
+        // Single file - use as-is
+        finalFile = files[0];
+        
+        socketService.sendToUser(userId, 'upload_progress', {
+          sessionId,
+          progress: 30,
+          message: 'Uploading file to cloud...'
+        });
+      }
+
+      // Upload final file to Cloudinary with compression
       const uploadResult = await CloudinaryService.uploadTempFile(
-        file.path,
+        finalFile.path,
         actualFileName,
         { 
           folder: 'mati/sessions',
-          fileType: file.mimetype  // Pass the MIME type for intelligent compression
+          fileType: finalFile.mimetype
         }
       );
 
@@ -234,7 +280,7 @@ class SessionController {
           payload: {
             file_url: uploadResult.data.secure_url,
             file_name: actualFileName,
-            file_type: file.mimetype,
+            file_type: finalFile.mimetype,
             duration: updateData.duration
           },
           priority: 10 // High priority for transcription
@@ -258,8 +304,39 @@ class SessionController {
         });
       }
 
+      // Clean up temporary files
+      try {
+        // Clean up FFmpeg concatenation temp directory if used
+        if (tempDir) {
+          FFmpegService.cleanupTempFiles(tempDir);
+          console.log(`🗑️ Cleaned up temporary concatenation files`);
+        }
+        
+        // Clean up original uploaded files from Multer
+        const originalFilePaths = files.map(file => file.path);
+        FFmpegService.cleanupTempFiles(null, originalFilePaths);
+        console.log(`🗑️ Cleaned up ${originalFilePaths.length} original uploaded files`);
+      } catch (cleanupError) {
+        console.warn('Failed to clean up temp files:', cleanupError.message);
+      }
+
     } catch (error) {
       console.error(`❌ Background upload failed for session ${sessionId}:`, error);
+      
+      // Clean up temporary files on error
+      try {
+        // Clean up FFmpeg concatenation temp directory if used
+        if (tempDir) {
+          FFmpegService.cleanupTempFiles(tempDir);
+        }
+        
+        // Clean up original uploaded files from Multer
+        const originalFilePaths = files.map(file => file.path);
+        FFmpegService.cleanupTempFiles(null, originalFilePaths);
+        console.log(`🗑️ Cleaned up files after error`);
+      } catch (cleanupError) {
+        console.warn('Failed to clean up temp files after error:', cleanupError.message);
+      }
       
       // Update session status to failed
       try {

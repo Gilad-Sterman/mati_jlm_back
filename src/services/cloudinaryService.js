@@ -66,7 +66,7 @@ class CloudinaryService {
       storage: storage,
       limits: {
         fileSize: 500 * 1024 * 1024, // 500MB limit
-        files: 1 // Only one file at a time
+        files: 10 // Allow up to 10 files for concatenation
       },
       // Ensure proper UTF-8 handling for filenames
       preservePath: false,

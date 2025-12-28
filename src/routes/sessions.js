@@ -64,7 +64,7 @@ router.get('/stats',
 router.post('/', 
   authenticate, 
   requireAdminOrAdviser,
-  CloudinaryService.createUploadMiddleware().single('file'),
+  CloudinaryService.createUploadMiddleware().array('files', 10), // Allow up to 10 files
   SessionController.createSession
 );
 
