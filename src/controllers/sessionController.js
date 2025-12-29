@@ -283,7 +283,7 @@ class SessionController {
             file_type: finalFile.mimetype,
             duration: updateData.duration
           },
-          priority: 10 // High priority for transcription
+          priority: 8 // Lower priority - let reports complete first
         });
 
         // Emit job created event
