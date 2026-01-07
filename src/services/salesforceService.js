@@ -1,5 +1,6 @@
 const axios = require('axios');
 const ClientService = require('./clientService');
+const { generateReportHtml } = require('../utils/reportHtmlGenerator');
 
 class SalesforceService {
   /**
@@ -83,6 +84,16 @@ class SalesforceService {
         console.warn('⚠️ No PDF URL provided - email will be sent without attachment');
       }
 
+      // Generate HTML content from report data
+      let reportHtml = null;
+      try {
+        reportHtml = generateReportHtml(reportData, sessionData, clientData);
+        console.log('✅ Generated HTML content for report');
+      } catch (htmlError) {
+        console.error('⚠️ Failed to generate HTML content:', htmlError.message);
+        // Continue with the process even if HTML generation fails
+      }
+
       // Prepare email webhook payload
       const payload = {
         // Client information
@@ -120,7 +131,8 @@ class SalesforceService {
           content: reportData.content,
           pdf_url: pdfUrl, // Cloudinary URL for PDF download
           pdf_filename: pdfFilename, // Filename for reference
-          approved_at: new Date().toISOString()
+          approved_at: new Date().toISOString(),
+          html_content: reportHtml // Add HTML content for Make.com to use
         },
         // PDF attachment info (URL-based instead of base64)
         attachment: pdfUrl ? {
