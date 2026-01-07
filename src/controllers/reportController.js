@@ -358,10 +358,9 @@ class ReportController {
           export_metadata: {
             exported_by: user.id,
             exported_at: new Date().toISOString(),
-            pdf_generated: exportResult.pdf_generated,
-            pdf_url: exportResult.pdf_url,
+            html_generated: exportResult.html_generated,
             email_sent: exportResult.email_sent,
-            crm_updated: exportResult.crm_updated
+            crm_updated: exportResult.salesforce_updated
           }
         }
       });

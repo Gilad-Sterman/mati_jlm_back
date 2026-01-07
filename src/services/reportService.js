@@ -244,7 +244,7 @@ class ReportService {
         .select(`
           *,
           session:sessions(
-            id, title, client_id, adviser_id, status, created_at, updated_at,
+            id, title, client_id, adviser_id, status, created_at, updated_at, transcription_metadata,
             client:clients(id, name, email, phone, metadata, created_at),
             adviser:users(id, name, email, role)
           )
@@ -321,46 +321,7 @@ class ReportService {
       console.log(`✅ Export process completed for report ${reportId}`);
       console.log(`📧 Session ${session.id} marked as completed`);
 
-      // Step 4: Upload PDF file to Cloudinary
-      let pdfUrl = null;
-      let pdfGenerated = false;
-      let cloudinaryPublicId = null;
-      
-      if (pdfFile) {
-        try {
-          const CloudinaryService = require('./cloudinaryService');
-          
-          console.log(`📋 PDF file info: size=${pdfFile.size}, mimetype=${pdfFile.mimetype}`);
-          
-          // Upload PDF to Cloudinary in mati/reports folder
-          const uploadResult = await CloudinaryService.uploadPdfReport(pdfFile, reportId, session.id);
-          
-          if (uploadResult.success) {
-            pdfUrl = uploadResult.data.secure_url;
-            cloudinaryPublicId = uploadResult.data.public_id;
-            pdfGenerated = true;
-            
-            console.log(`✅ PDF uploaded to Cloudinary: ${pdfUrl}`);
-            
-            // Save PDF URL to session.file_url
-            await supabaseAdmin
-              .from('sessions')
-              .update({ file_url: pdfUrl })
-              .eq('id', session.id);
-            
-            console.log(`✅ PDF URL saved to session.file_url: ${pdfUrl}`);
-          } else {
-            console.error('Failed to upload PDF to Cloudinary:', uploadResult.error);
-            throw new Error(`Cloudinary upload failed: ${uploadResult.error}`);
-          }
-          
-        } catch (pdfError) {
-          console.error('Failed to upload PDF file:', pdfError);
-          // Don't fail the entire export if PDF upload fails
-        }
-      }
-      
-      // Step 5: Send email to client via Make.com and update Salesforce
+      // Step 4: Send email to client via Make.com and update Salesforce
       let emailSent = false;
       let salesforceUpdated = false;
       let emailError = null;
@@ -372,8 +333,8 @@ class ReportService {
           report,           // Report data
           session,          // Session data  
           session.client,   // Client data
-          pdfUrl,           // PDF URL from Cloudinary (replaces buffer sending)
-          null              // No longer sending PDF buffer - using URL instead
+          null,             // No PDF URL - using HTML content instead
+          null              // No PDF buffer - using HTML content instead
         );
         
         if (emailResult.success) {
@@ -395,15 +356,12 @@ class ReportService {
         // Don't fail the entire export if email sending fails
       }
 
-      // Step 6: No cleanup needed - Cloudinary handles file storage
-      // PDF is now stored permanently in Cloudinary and accessible via URL
+      // Step 5: Export completed - HTML content sent to Make.com for PDF generation
 
       return {
         report: approvedReport,
         session: updatedSession,
-        pdf_generated: pdfGenerated,
-        pdf_url: pdfUrl,
-        cloudinary_public_id: cloudinaryPublicId,
+        html_generated: true,
         email_sent: emailSent,
         salesforce_updated: salesforceUpdated,
         email_error: emailError

@@ -21,6 +21,13 @@ function generateReportHtml(report, session, client) {
       throw new Error('Report content is empty or invalid');
     }
 
+    // Detect language from session transcription metadata
+    const language = detectLanguage(session);
+    const isHebrew = language === 'hebrew';
+    
+    // Get localized titles
+    const titles = getLocalizedTitles(isHebrew);
+
     // Detect if this is the new report structure (has key_insights and action_items)
     const isNewStructure = content.key_insights && content.action_items;
     
@@ -30,19 +37,21 @@ function generateReportHtml(report, session, client) {
     // Generate HTML with inline CSS
     const html = `
       <!DOCTYPE html>
-      <html lang="en">
+      <html lang="${isHebrew ? 'he' : 'en'}" dir="${isHebrew ? 'rtl' : 'ltr'}">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${client?.name || 'Client'} Report - ${sessionDate}</title>
         <style>
           body {
-            font-family: Arial, sans-serif;
+            font-family: ${isHebrew ? '"Segoe UI", Tahoma, Arial, sans-serif' : 'Arial, sans-serif'};
             line-height: 1.6;
             color: #333;
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
+            text-align: ${isHebrew ? 'right' : 'left'};
+            direction: ${isHebrew ? 'rtl' : 'ltr'};
           }
           .document-header {
             margin-bottom: 1.5rem;
@@ -56,7 +65,7 @@ function generateReportHtml(report, session, client) {
           }
           .header-right {
             width: 30%;
-            text-align: right;
+            text-align: ${isHebrew ? 'left' : 'right'};
           }
           .report-title {
             font-size: 1.8rem;
@@ -115,12 +124,13 @@ function generateReportHtml(report, session, client) {
             margin-bottom: 0.5rem;
           }
           .supporting-quotes {
-            margin-left: 1rem;
+            margin-${isHebrew ? 'right' : 'left'}: 1rem;
             margin-top: 0.5rem;
           }
           .supporting-quotes ul {
             margin-top: 0.5rem;
-            padding-left: 1.5rem;
+            padding-${isHebrew ? 'right' : 'left'}: 1.5rem;
+            padding-${isHebrew ? 'left' : 'right'}: 0;
           }
           .supporting-quotes li {
             margin-bottom: 0.25rem;
@@ -133,7 +143,8 @@ function generateReportHtml(report, session, client) {
             font-weight: bold;
           }
           .action-details {
-            padding-left: 1rem;
+            padding-${isHebrew ? 'right' : 'left'}: 1rem;
+            padding-${isHebrew ? 'left' : 'right'}: 0;
           }
           .action-owner, .action-deadline, .action-status {
             margin-bottom: 0.25rem;
@@ -160,7 +171,7 @@ function generateReportHtml(report, session, client) {
         <!-- Professional Header -->
         <div class="document-header">
           <div class="header-left">
-            <h1 class="report-title">Client Report</h1>
+            <h1 class="report-title">${titles.clientReport}</h1>
             ${client?.name ? `<h2 class="client-name">${client.name}</h2>` : ''}
             <div class="report-meta">
               <div class="meta-item">
@@ -192,7 +203,7 @@ function generateReportHtml(report, session, client) {
         </div>
         
         <div class="document-content">
-          ${isNewStructure ? generateNewStructureContent(content) : generateLegacyStructureContent(content)}
+          ${isNewStructure ? generateNewStructureContent(content, titles) : generateLegacyStructureContent(content, titles)}
         </div>
       </body>
       </html>
@@ -208,14 +219,14 @@ function generateReportHtml(report, session, client) {
 /**
  * Generate HTML content for the new report structure
  */
-function generateNewStructureContent(content) {
+function generateNewStructureContent(content, titles) {
   let html = '';
   
   // General Summary Section
   if (content.general_summary) {
     html += `
       <div class="content-section">
-        <h5>General Summary</h5>
+        <h5>${titles.generalSummary}</h5>
         <div class="content-preview">
           <p>${content.general_summary}</p>
         </div>
@@ -227,7 +238,7 @@ function generateNewStructureContent(content) {
   if (content.key_insights && Array.isArray(content.key_insights) && content.key_insights.length > 0) {
     html += `
       <div class="content-section">
-        <h5>Key Insights</h5>
+        <h5>${titles.keyInsights}</h5>
         <div class="content-preview">
     `;
     
@@ -245,7 +256,7 @@ function generateNewStructureContent(content) {
       if (insight.supporting_quotes && insight.supporting_quotes.filter(quote => quote && quote.trim()).length > 0) {
         html += `
           <div class="supporting-quotes">
-            <strong>Supporting Quotes:</strong>
+            <strong>${titles.supportingQuotes}:</strong>
             <ul>
         `;
         
@@ -272,7 +283,7 @@ function generateNewStructureContent(content) {
   if (content.action_items && Array.isArray(content.action_items) && content.action_items.length > 0) {
     html += `
       <div class="content-section">
-        <h5>Action Items</h5>
+        <h5>${titles.actionItems}</h5>
         <div class="content-preview">
     `;
     
@@ -283,10 +294,10 @@ function generateNewStructureContent(content) {
             <strong>${item.task}</strong>
           </div>
           <div class="action-details">
-            <div class="action-owner">Owner: ${translateOwner(item.owner)}</div>
-            ${item.deadline ? `<div class="action-deadline">Deadline: ${item.deadline}</div>` : ''}
+            <div class="action-owner">${titles.owner}: ${translateOwner(item.owner)}</div>
+            ${item.deadline ? `<div class="action-deadline">${titles.deadline}: ${item.deadline}</div>` : ''}
             <div class="action-status ${getStatusClass(item.status)}">
-              Status: ${translateStatus(item.status)}
+              ${titles.status}: ${translateStatus(item.status)}
             </div>
           </div>
         </div>
@@ -303,7 +314,7 @@ function generateNewStructureContent(content) {
   if (content.target_summary) {
     html += `
       <div class="content-section">
-        <h5>Target Summary</h5>
+        <h5>${titles.targetSummary}</h5>
         <div class="content-preview">
           <p>${content.target_summary}</p>
         </div>
@@ -317,14 +328,14 @@ function generateNewStructureContent(content) {
 /**
  * Generate HTML content for the legacy report structure
  */
-function generateLegacyStructureContent(content) {
+function generateLegacyStructureContent(content, titles) {
   let html = '';
   
   // Executive Summary
   if (content.executive_summary) {
     html += `
       <div class="content-section">
-        <h5>Executive Summary</h5>
+        <h5>${titles.executiveSummary}</h5>
         <div class="content-preview">
           <p>${content.executive_summary}</p>
         </div>
@@ -336,7 +347,7 @@ function generateLegacyStructureContent(content) {
   if (content.entrepreneur_needs) {
     html += `
       <div class="content-section">
-        <h5>Entrepreneur Needs</h5>
+        <h5>${titles.entrepreneurNeeds}</h5>
         <div class="content-preview">
     `;
     
@@ -405,7 +416,7 @@ function generateLegacyStructureContent(content) {
   if (content.advisor_solutions) {
     html += `
       <div class="content-section">
-        <h5>Advisor Solutions</h5>
+        <h5>${titles.advisorSolutions}</h5>
         <div class="content-preview">
     `;
     
@@ -478,7 +489,7 @@ function generateLegacyStructureContent(content) {
     if (hasImmediateActions || hasRecommendation) {
       html += `
         <div class="content-section">
-          <h5>Agreed Actions</h5>
+          <h5>${titles.agreedActions}</h5>
           <div class="content-preview">
       `;
       
@@ -624,6 +635,87 @@ function getStatusClass(status) {
       return 'status-open';
     default:
       return '';
+  }
+}
+
+/**
+ * Detect language from session transcription metadata
+ */
+function detectLanguage(session) {
+  try {
+    if (session?.transcription_metadata) {
+      const metadata = typeof session.transcription_metadata === 'string' 
+        ? JSON.parse(session.transcription_metadata) 
+        : session.transcription_metadata;
+      
+      return metadata.language || 'english';
+    }
+  } catch (error) {
+    console.warn('Failed to parse transcription_metadata:', error);
+  }
+  
+  // Default to English if no metadata or parsing fails
+  return 'english';
+}
+
+/**
+ * Get localized titles based on language
+ */
+function getLocalizedTitles(isHebrew) {
+  if (isHebrew) {
+    return {
+      // Main titles
+      clientReport: 'דוח לקוח',
+      generalSummary: 'סיכום כללי',
+      keyInsights: 'תובנות מרכזיות',
+      actionItems: 'פעולות לביצוע',
+      targetSummary: 'סיכום יעדים',
+      
+      // Legacy structure titles
+      executiveSummary: 'סיכום מנהלים',
+      entrepreneurNeeds: 'צרכי היזם',
+      advisorSolutions: 'פתרונות היועץ',
+      agreedActions: 'פעולות מוסכמות',
+      
+      // Field labels
+      supportingQuotes: 'ציטוטים תומכים',
+      owner: 'אחראי',
+      deadline: 'מועד יעד',
+      status: 'סטטוס',
+      
+      // Meta labels
+      date: 'תאריך',
+      adviser: 'יועץ',
+      email: 'אימייל',
+      phone: 'טלפון'
+    };
+  } else {
+    return {
+      // Main titles
+      clientReport: 'Client Report',
+      generalSummary: 'General Summary',
+      keyInsights: 'Key Insights',
+      actionItems: 'Action Items',
+      targetSummary: 'Target Summary',
+      
+      // Legacy structure titles
+      executiveSummary: 'Executive Summary',
+      entrepreneurNeeds: 'Entrepreneur Needs',
+      advisorSolutions: 'Advisor Solutions',
+      agreedActions: 'Agreed Actions',
+      
+      // Field labels
+      supportingQuotes: 'Supporting Quotes',
+      owner: 'Owner',
+      deadline: 'Deadline',
+      status: 'Status',
+      
+      // Meta labels
+      date: 'Date',
+      adviser: 'Adviser',
+      email: 'Email',
+      phone: 'Phone'
+    };
   }
 }
 
