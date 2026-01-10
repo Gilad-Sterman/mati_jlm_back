@@ -253,22 +253,22 @@ function generateNewStructureContent(content, titles) {
           </div>
       `;
       
-      if (insight.supporting_quotes && insight.supporting_quotes.filter(quote => quote && quote.trim()).length > 0) {
-        html += `
-          <div class="supporting-quotes">
-            <strong>${titles.supportingQuotes}:</strong>
-            <ul>
-        `;
+      // if (insight.supporting_quotes && insight.supporting_quotes.filter(quote => quote && quote.trim()).length > 0) {
+      //   html += `
+      //     <div class="supporting-quotes">
+      //       <strong>${titles.supportingQuotes}:</strong>
+      //       <ul>
+      //   `;
         
-        insight.supporting_quotes.filter(quote => quote && quote.trim()).forEach(quote => {
-          html += `<li>"${quote}"</li>`;
-        });
+      //   insight.supporting_quotes.filter(quote => quote && quote.trim()).forEach(quote => {
+      //     html += `<li>"${quote}"</li>`;
+      //   });
         
-        html += `
-            </ul>
-          </div>
-        `;
-      }
+      //   html += `
+      //       </ul>
+      //     </div>
+      //   `;
+      // }
       
       html += `</div>`;
     });
@@ -292,13 +292,6 @@ function generateNewStructureContent(content, titles) {
         <div class="action-item">
           <div class="action-task">
             <strong>${item.task}</strong>
-          </div>
-          <div class="action-details">
-            <div class="action-owner">${titles.owner}: ${translateOwner(item.owner)}</div>
-            ${item.deadline ? `<div class="action-deadline">${titles.deadline}: ${item.deadline}</div>` : ''}
-            <div class="action-status ${getStatusClass(item.status)}">
-              ${titles.status}: ${translateStatus(item.status)}
-            </div>
           </div>
         </div>
       `;
