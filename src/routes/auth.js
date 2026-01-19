@@ -62,6 +62,20 @@ router.post('/logout', authenticate, AuthController.logout);
  */
 router.get('/validate', authenticate, AuthController.validateToken);
 
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Send password reset email
+ * @access  Public
+ */
+router.post('/forgot-password', AuthController.forgotPassword);
+
+/**
+ * @route   POST /api/auth/reset-password
+ * @desc    Reset password with token
+ * @access  Public
+ */
+router.post('/reset-password', AuthController.resetPassword);
+
 // Test route
 router.get('/test', (req, res) => {
   res.json({

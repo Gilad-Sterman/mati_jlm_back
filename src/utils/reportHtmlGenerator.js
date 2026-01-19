@@ -712,6 +712,155 @@ function getLocalizedTitles(isHebrew) {
   }
 }
 
+/**
+ * Generate HTML for just the action items section
+ * @param {Object} report - The report object from the database
+ * @param {Object} session - The session object with client and adviser info
+ * @param {Object} client - The client object
+ * @returns {String} HTML content for action items only
+ */
+function generateActionItemsHtml(report, session, client) {
+  try {
+    // Parse report content if it's a string
+    const content = typeof report.content === 'string' 
+      ? JSON.parse(report.content) 
+      : report.content;
+    
+    if (!content) {
+      return '<p>No action items available</p>';
+    }
+
+    // Detect language from session transcription metadata
+    const language = detectLanguage(session);
+    const isHebrew = language === 'hebrew';
+    
+    // Get localized titles
+    const titles = getLocalizedTitles(isHebrew);
+
+    // Check for new structure (action_items array)
+    if (content.action_items && Array.isArray(content.action_items) && content.action_items.length > 0) {
+      let html = `
+        <div style="font-family: ${isHebrew ? '"Segoe UI", Tahoma, Arial, sans-serif' : 'Arial, sans-serif'}; direction: ${isHebrew ? 'rtl' : 'ltr'}; text-align: ${isHebrew ? 'right' : 'left'};">
+          <h3 style="color: #000; margin-bottom: 1rem; font-size: 1.2rem;">${titles.actionItems}</h3>
+          <div style="margin-bottom: 1rem;">
+      `;
+      
+      content.action_items.forEach((item, index) => {
+        html += `
+          <div style="margin-bottom: 1rem; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; background-color: #f9f9f9;">
+            <div style="font-weight: bold; margin-bottom: 0.5rem; color: #000;">
+              ${index + 1}. ${item.task}
+            </div>
+        `;
+        
+        // Add owner, deadline, status if available
+        if (item.owner || item.deadline || item.status) {
+          html += `<div style="font-size: 0.9rem; color: #666; margin-top: 0.5rem;">`;
+          
+          if (item.owner) {
+            html += `<span style="margin-right: 1rem;"><strong>${isHebrew ? 'אחראי' : 'Owner'}:</strong> ${translateOwner(item.owner, isHebrew)}</span>`;
+          }
+          
+          if (item.deadline) {
+            html += `<span style="margin-right: 1rem;"><strong>${isHebrew ? 'מועד יעד' : 'Deadline'}:</strong> ${item.deadline}</span>`;
+          }
+          
+          if (item.status) {
+            html += `<span><strong>${isHebrew ? 'סטטוס' : 'Status'}:</strong> ${translateStatus(item.status, isHebrew)}</span>`;
+          }
+          
+          html += `</div>`;
+        }
+        
+        html += `</div>`;
+      });
+      
+      html += `
+          </div>
+        </div>
+      `;
+      
+      return html;
+    }
+    
+    // Check for legacy structure (agreed_actions)
+    if (content.agreed_actions) {
+      const hasImmediateActions = content.agreed_actions.immediate_actions && content.agreed_actions.immediate_actions.length > 0;
+      const hasRecommendation = content.agreed_actions.concrete_recommendation && typeof content.agreed_actions.concrete_recommendation === 'string' && content.agreed_actions.concrete_recommendation.trim();
+      
+      if (hasImmediateActions || hasRecommendation) {
+        let html = `
+          <div style="font-family: ${isHebrew ? '"Segoe UI", Tahoma, Arial, sans-serif' : 'Arial, sans-serif'}; direction: ${isHebrew ? 'rtl' : 'ltr'}; text-align: ${isHebrew ? 'right' : 'left'};">
+            <h3 style="color: #000; margin-bottom: 1rem; font-size: 1.2rem;">${titles.agreedActions}</h3>
+        `;
+        
+        if (hasImmediateActions) {
+          html += `
+            <div style="margin-bottom: 1rem;">
+              <h4 style="color: #000; margin-bottom: 0.5rem;">Immediate Actions</h4>
+              <ul style="margin: 0; padding-left: 1.5rem;">
+          `;
+          
+          content.agreed_actions.immediate_actions.forEach(action => {
+            html += `<li style="margin-bottom: 0.5rem;">${action}</li>`;
+          });
+          
+          html += `</ul></div>`;
+        }
+        
+        if (hasRecommendation) {
+          html += `
+            <div style="margin-bottom: 1rem;">
+              <h4 style="color: #000; margin-bottom: 0.5rem;">Recommendation</h4>
+              <p style="margin: 0;">${content.agreed_actions.concrete_recommendation}</p>
+            </div>
+          `;
+        }
+        
+        html += `</div>`;
+        return html;
+      }
+    }
+    
+    return '<p>No action items available</p>';
+    
+  } catch (error) {
+    console.error('Error generating action items HTML:', error);
+    return '<p>Error generating action items</p>';
+  }
+}
+
+/**
+ * Helper function to translate owner values
+ */
+function translateOwner(owner, isHebrew) {
+  if (!owner) return '';
+  
+  const translations = {
+    'client': isHebrew ? 'לקוח' : 'Client',
+    'adviser': isHebrew ? 'יועץ' : 'Adviser',
+    'advisor': isHebrew ? 'יועץ' : 'Advisor'
+  };
+  
+  return translations[owner.toLowerCase()] || owner;
+}
+
+/**
+ * Helper function to translate status values
+ */
+function translateStatus(status, isHebrew) {
+  if (!status) return '';
+  
+  const translations = {
+    'open': isHebrew ? 'פתוח' : 'Open',
+    'in progress': isHebrew ? 'בתהליך' : 'In Progress',
+    'completed': isHebrew ? 'הושלם' : 'Completed'
+  };
+  
+  return translations[status.toLowerCase()] || status;
+}
+
 module.exports = {
-  generateReportHtml
+  generateReportHtml,
+  generateActionItemsHtml
 };

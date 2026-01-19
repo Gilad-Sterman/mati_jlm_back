@@ -261,6 +261,89 @@ class AuthController {
       });
     }
   }
+
+  /**
+   * Forgot password - send reset email
+   */
+  static async forgotPassword(req, res) {
+    try {
+      const { email } = req.body;
+      
+      if (!email || typeof email !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: 'Email is required'
+        });
+      }
+
+      // Clean and validate email format
+      const cleanEmail = email.trim().toLowerCase();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      
+      if (!emailRegex.test(cleanEmail)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid email format'
+        });
+      }
+
+      const PasswordResetService = require('../services/passwordResetService');
+      const result = await PasswordResetService.createResetToken(cleanEmail);
+      
+      res.json({
+        success: true,
+        message: result.message
+      });
+      
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to process password reset request'
+      });
+    }
+  }
+
+  /**
+   * Reset password with token
+   */
+  static async resetPassword(req, res) {
+    try {
+      const { token, password } = req.body;
+      
+      if (!token || !password) {
+        return res.status(400).json({
+          success: false,
+          message: 'Token and password are required'
+        });
+      }
+
+      // Validate password strength
+      const passwordValidation = AuthService.validatePassword(password);
+      if (!passwordValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: 'Password does not meet requirements',
+          errors: passwordValidation.errors
+        });
+      }
+
+      const PasswordResetService = require('../services/passwordResetService');
+      const result = await PasswordResetService.resetPassword(token, password);
+      
+      res.json({
+        success: true,
+        message: result.message
+      });
+      
+    } catch (error) {
+      console.error('Reset password error:', error);
+      res.status(400).json({
+        success: false,
+        message: error.message || 'Failed to reset password'
+      });
+    }
+  }
 }
 
 module.exports = AuthController;

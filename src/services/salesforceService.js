@@ -1,6 +1,6 @@
 const axios = require('axios');
 const ClientService = require('./clientService');
-const { generateReportHtml } = require('../utils/reportHtmlGenerator');
+const { generateReportHtml, generateActionItemsHtml } = require('../utils/reportHtmlGenerator');
 
 class SalesforceService {
   /**
@@ -86,9 +86,12 @@ class SalesforceService {
 
       // Generate HTML content from report data
       let reportHtml = null;
+      let actionItemsHtml = null;
       try {
         reportHtml = generateReportHtml(reportData, sessionData, clientData);
+        actionItemsHtml = generateActionItemsHtml(reportData, sessionData, clientData);
         console.log('✅ Generated HTML content for report');
+        console.log('✅ Generated action items HTML for project manager');
       } catch (htmlError) {
         console.error('⚠️ Failed to generate HTML content:', htmlError.message);
         // Continue with the process even if HTML generation fails
@@ -132,7 +135,8 @@ class SalesforceService {
           pdf_url: pdfUrl, // Cloudinary URL for PDF download
           pdf_filename: pdfFilename, // Filename for reference
           approved_at: new Date().toISOString(),
-          html_content: reportHtml // Add HTML content for Make.com to use
+          html_content: reportHtml, // Add HTML content for Make.com to use
+          action_items_html: actionItemsHtml // Add action items HTML for project manager
         },
         // PDF attachment info (URL-based instead of base64)
         attachment: pdfUrl ? {
