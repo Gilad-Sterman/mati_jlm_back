@@ -113,12 +113,26 @@ function generateReportHtml(report, session, client) {
             margin-bottom: 1rem;
             line-height: 1.6;
           }
-          .insight-item {
-            margin-bottom: 1.5rem;
+          .category-group {
+            margin-bottom: 2rem;
           }
-          .insight-category {
+          .category-header {
+            margin-bottom: 1rem;
+          }
+          .category-header h6 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #000000;
             margin-bottom: 0.5rem;
-            font-weight: bold;
+            padding-bottom: 0.3rem;
+            border-bottom: 1px solid #ddd;
+          }
+          .category-insights {
+            margin-${isHebrew ? 'right' : 'left'}: 1rem;
+            margin-${isHebrew ? 'left' : 'right'}: 0;
+          }
+          .insight-item {
+            margin-bottom: 1rem;
           }
           .insight-content {
             margin-bottom: 0.5rem;
@@ -242,35 +256,60 @@ function generateNewStructureContent(content, titles) {
         <div class="content-preview">
     `;
     
+    // Group insights by category
+    const insightsByCategory = {};
     content.key_insights.forEach(insight => {
+      const category = insight.category || 'Other';
+      if (!insightsByCategory[category]) {
+        insightsByCategory[category] = [];
+      }
+      insightsByCategory[category].push(insight);
+    });
+    
+    // Render each category with its insights grouped together
+    Object.keys(insightsByCategory).forEach(category => {
+      const categoryInsights = insightsByCategory[category];
+      
       html += `
-        <div class="insight-item">
-          <div class="insight-category">
-            <strong>${translateCategory(insight.category)}</strong>
+        <div class="category-group">
+          <div class="category-header">
+            <h6><strong>${translateCategory(category, isHebrew)}</strong></h6>
           </div>
-          <div class="insight-content">
-            <p>${insight.content}</p>
-          </div>
+          <div class="category-insights">
       `;
       
-      // if (insight.supporting_quotes && insight.supporting_quotes.filter(quote => quote && quote.trim()).length > 0) {
-      //   html += `
-      //     <div class="supporting-quotes">
-      //       <strong>${titles.supportingQuotes}:</strong>
-      //       <ul>
-      //   `;
+      categoryInsights.forEach(insight => {
+        html += `
+          <div class="insight-item">
+            <div class="insight-content">
+              <p>• ${insight.content}</p>
+            </div>
+        `;
         
-      //   insight.supporting_quotes.filter(quote => quote && quote.trim()).forEach(quote => {
-      //     html += `<li>"${quote}"</li>`;
-      //   });
+        // if (insight.supporting_quotes && insight.supporting_quotes.filter(quote => quote && quote.trim()).length > 0) {
+        //   html += `
+        //     <div class="supporting-quotes">
+        //       <strong>${titles.supportingQuotes}:</strong>
+        //       <ul>
+        //   `;
+          
+        //   insight.supporting_quotes.filter(quote => quote && quote.trim()).forEach(quote => {
+        //     html += `<li>"${quote}"</li>`;
+        //   });
+          
+        //   html += `
+        //       </ul>
+        //     </div>
+        //   `;
+        // }
         
-      //   html += `
-      //       </ul>
-      //     </div>
-      //   `;
-      // }
+        html += `</div>`;
+      });
       
-      html += `</div>`;
+      html += `
+          </div>
+        </div>
+      `;
     });
     
     html += `
@@ -577,16 +616,24 @@ function generateErrorHtml(report, session, client, error) {
 }
 
 /**
- * Helper function to translate category names
+ * Helper function to translate category names based on language
  */
-function translateCategory(category) {
-  const categoryMap = {
-    'what we learned about the clients business': 'What We Learned About the Client\'s Business',
-    'decisions made': 'Decisions Made',
-    'opportunities/risks or concerns that came up': 'Opportunities/Risks or Concerns That Came Up'
-  };
-  
-  return categoryMap[category] || category;
+function translateCategory(category, isHebrew = false) {
+  if (isHebrew) {
+    const hebrewCategoryMap = {
+      'what we learned about the clients business': 'מה למדנו על העסק של הלקוח',
+      'decisions made': 'החלטות שהתקבלו',
+      'opportunities/risks or concerns that came up': 'הזדמנויות/סיכונים או דאגות שעלו'
+    };
+    return hebrewCategoryMap[category] || category;
+  } else {
+    const englishCategoryMap = {
+      'what we learned about the clients business': 'What We Learned About the Client\'s Business',
+      'decisions made': 'Decisions Made',
+      'opportunities/risks or concerns that came up': 'Opportunities/Risks or Concerns That Came Up'
+    };
+    return englishCategoryMap[category] || category;
+  }
 }
 
 /**

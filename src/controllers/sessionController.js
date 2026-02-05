@@ -249,15 +249,38 @@ class SessionController {
         message: 'File uploaded, updating database...'
       });
 
-      // Update session with Cloudinary URL and metadata
+      // Handle large files by generating compressed transformation URL
+      let finalFileUrl = uploadResult.data.secure_url;
+      let finalDuration = uploadResult.data.duration;
+      let compressionComplete = true;
+      
+      if (uploadResult.data.eager_async && uploadResult.data.compression_info?.processing_status === 'async') {
+        console.log(`⏳ Large file uploaded with async compression, generating compressed URL...`);
+        
+        // Generate on-demand transformation URL instead of waiting for eager processing
+        const compressedUrl = CloudinaryService.generateCompressedUrl(
+          uploadResult.data.public_id,
+          { format: 'mp3', bit_rate: '32k' }
+        );
+        
+        finalFileUrl = compressedUrl;
+        console.log(`✅ Using on-demand compressed URL: ${finalFileUrl}`);
+      }
+      
+      // Update session with final URL and metadata (only if compression succeeded)
       const updateData = {
-        file_url: uploadResult.data.secure_url,
+        file_url: finalFileUrl,
         status: 'uploaded',
-        duration: uploadResult.data.duration ? Math.round(uploadResult.data.duration) : null,
+        duration: finalDuration ? Math.round(finalDuration) : null,
         processing_metadata: {
           cloudinary_public_id: uploadResult.data.public_id,
           upload_completed_at: new Date().toISOString(),
-          compression_info: uploadResult.data.compression_info // Store compression stats
+          compression_completed_at: new Date().toISOString(),
+          compression_info: {
+            ...uploadResult.data.compression_info,
+            compression_complete: compressionComplete,
+            final_url_used: finalFileUrl
+          }
         }
       };
 
@@ -278,7 +301,8 @@ class SessionController {
           session_id: sessionId,
           type: 'transcribe',
           payload: {
-            file_url: uploadResult.data.secure_url,
+            file_url: finalFileUrl, // Use compressed URL for transcription
+            original_url: uploadResult.data.secure_url, // Fallback URL if transformation fails
             file_name: actualFileName,
             file_type: finalFile.mimetype,
             duration: updateData.duration

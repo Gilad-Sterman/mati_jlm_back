@@ -162,14 +162,66 @@ class CloudinaryService {
       // Get optimized upload options based on file type
       const optimizedOptions = this.getOptimizedUploadOptions(originalName, fileType, options);
       
-      // Merge with any custom options (custom options take precedence)
-      uploadOptions = { 
-        ...optimizedOptions, 
-        ...options,
-        timeout: 120000  // 2 minutes timeout for large files
-      };
+      // For large files (>40MB), use eager_async to prevent synchronous processing errors
+      const isLargeFile = parseFloat(originalSizeMB) > 40;
+      const needsTransformation = optimizedOptions.format || optimizedOptions.bit_rate;
+      
+      if (isLargeFile && needsTransformation) {
+        console.log(`📦 Large file (${originalSizeMB}MB) with transformations → using eager_async`);
+        optimizedOptions.eager_async = true;
+        optimizedOptions.eager = [
+          {
+            format: 'mp3',
+            audio_codec: 'mp3',
+            bit_rate: '32k',
+            quality: 'auto'
+          }
+        ];
+        // Remove transformation options from main upload since they're in eager
+        delete optimizedOptions.format;
+        delete optimizedOptions.bit_rate;
+        delete optimizedOptions.flags;
+      }
+      
+      // Merge with any custom options, but preserve eager_async settings
+      if (isLargeFile && needsTransformation) {
+        // For large files with eager_async, don't let custom options override our async settings
+        uploadOptions = { 
+          ...optimizedOptions,
+          ...options,
+          // Ensure eager_async settings are preserved
+          eager_async: true,
+          eager: optimizedOptions.eager,
+          timeout: 300000  // 5 minutes for large files
+        };
+        
+        // Remove any transformation options that might have been added by custom options
+        delete uploadOptions.format;
+        delete uploadOptions.bit_rate;
+        delete uploadOptions.flags;
+        delete uploadOptions.quality; // Remove quality from main options for eager_async
+        
+        // Also remove any other transformation parameters that could cause sync processing
+        delete uploadOptions.width;
+        delete uploadOptions.height;
+        delete uploadOptions.crop;
+        delete uploadOptions.gravity;
+      } else {
+        // Standard upload options
+        uploadOptions = { 
+          ...optimizedOptions, 
+          ...options,
+          timeout: isLargeFile ? 300000 : 120000  // 5 minutes for large files, 2 minutes for others
+        };
+      }
 
-      console.log(`📤 Uploading ${originalName} (${originalSizeMB}MB) → MP3 ${uploadOptions.bit_rate} compression`);
+      // Log upload info with correct compression details
+      const compressionInfo = isLargeFile && needsTransformation ? 
+        `MP3 32k compression (async)` : 
+        `MP3 ${uploadOptions.bit_rate || '32k'} compression`;
+      
+      console.log(`📤 Uploading ${originalName} (${originalSizeMB}MB) → ${compressionInfo}`);
+
 
       // Warn about very large files
       if (parseFloat(originalSizeMB) > 20) {
@@ -179,11 +231,28 @@ class CloudinaryService {
       
       const result = await cloudinary.uploader.upload(tempFilePath, uploadOptions);
       
-      // Log compression results
-      const compressedSizeMB = (result.bytes / (1024 * 1024)).toFixed(2);
-      const compressionRatio = ((1 - (result.bytes / stats.size)) * 100).toFixed(1);
+      // Handle eager_async processing results
+      let finalResult = result;
+      let compressedSizeMB = (result.bytes / (1024 * 1024)).toFixed(2);
+      let compressionRatio = ((1 - (result.bytes / stats.size)) * 100).toFixed(1);
       
-      console.log(`✅ Compressed: ${originalSizeMB}MB → ${compressedSizeMB}MB (${compressionRatio}% reduction) | ${result.duration ? Math.round(result.duration/60) + 'min' : 'N/A'}`);
+      // Check if we used eager_async (based on our upload options, not Cloudinary response)
+      const usedEagerAsync = isLargeFile && needsTransformation && uploadOptions.eager_async;
+      
+      if (usedEagerAsync) {
+        console.log(`⏳ Large file uploaded, compression processing asynchronously...`);
+        
+        // For eager_async uploads, the compressed version will be available later
+        // Use the original upload result but note it's being processed
+        compressedSizeMB = 'processing';
+        compressionRatio = 'pending';
+        
+        // The secure_url will be the original file, compressed version will be available via eager transformations
+        console.log(`✅ Upload complete: ${originalSizeMB}MB → compression processing in background`);
+      } else {
+        // Standard synchronous processing
+        console.log(`✅ Compressed: ${originalSizeMB}MB → ${compressedSizeMB}MB (${compressionRatio}% reduction) | ${result.duration ? Math.round(result.duration/60) + 'min' : 'N/A'}`);
+      }
       
       // Clean up temporary file
       try {
@@ -206,13 +275,15 @@ class CloudinaryService {
           height: result.height, // For video files
           created_at: result.created_at,
           original_filename: originalName,
+          eager_async: usedEagerAsync, // Flag to indicate async processing
           // Add compression metadata
           compression_info: {
             original_size_mb: parseFloat(originalSizeMB),
-            compressed_size_mb: parseFloat(compressedSizeMB),
-            compression_ratio_percent: parseFloat(compressionRatio),
+            compressed_size_mb: compressedSizeMB === 'processing' ? null : parseFloat(compressedSizeMB),
+            compression_ratio_percent: compressionRatio === 'pending' ? null : parseFloat(compressionRatio),
             original_format: path.extname(originalName).toLowerCase(),
-            compressed_format: result.format
+            compressed_format: result.format,
+            processing_status: isLargeFile && needsTransformation ? 'async' : 'complete'
           }
         }
       };
@@ -270,6 +341,118 @@ class CloudinaryService {
         error: error.message
       };
     }
+  }
+
+  /**
+   * Generate compressed URL for a Cloudinary asset using transformations
+   */
+  static generateCompressedUrl(publicId, options = {}) {
+    const defaultTransformations = {
+      format: 'mp3',
+      bit_rate: '32k',
+      quality: 'auto'
+    };
+    
+    const transformations = { ...defaultTransformations, ...options };
+    
+    // Generate URL with transformations using Cloudinary's URL builder
+    return cloudinary.url(publicId, {
+      resource_type: 'video',
+      format: transformations.format,
+      bit_rate: transformations.bit_rate,
+      quality: transformations.quality,
+      secure: true
+    });
+  }
+
+  /**
+   * Check if eager transformation is complete
+   */
+  static async checkTransformationStatus(publicId, transformations = {}) {
+    try {
+      const result = await cloudinary.api.resource(publicId, {
+        resource_type: 'video'
+      });
+      
+      console.log(`🔍 Checking transformation status for ${publicId}:`);
+      console.log(`   - Has eager transformations: ${result.eager ? result.eager.length : 0}`);
+      
+      // Check if eager transformations exist and are ready
+      if (result.eager && result.eager.length > 0) {
+        console.log(`   - Eager transformations found:`);
+        result.eager.forEach((eager, index) => {
+          console.log(`     ${index + 1}. Format: ${eager.format}, Status: ${eager.status}, Bytes: ${eager.bytes}`);
+        });
+        
+        // Look for matching transformation
+        const targetTransform = result.eager.find(eager => {
+          return eager.format === (transformations.format || 'mp3') &&
+                 eager.status === 'complete';
+        });
+        
+        if (targetTransform) {
+          console.log(`   ✅ Found completed transformation: ${targetTransform.format}`);
+          return {
+            ready: true,
+            url: targetTransform.secure_url,
+            bytes: targetTransform.bytes,
+            duration: targetTransform.duration
+          };
+        } else {
+          console.log(`   ⏳ No completed ${transformations.format || 'mp3'} transformation found`);
+        }
+      } else {
+        console.log(`   ❌ No eager transformations found`);
+      }
+      
+      return { ready: false };
+    } catch (error) {
+      console.error('Error checking transformation status:', error);
+      return { ready: false, error: error.message };
+    }
+  }
+
+  /**
+   * Wait for eager transformation to complete with polling
+   */
+  static async waitForTransformation(publicId, transformations = {}, maxWaitTime = 300000) {
+    const startTime = Date.now();
+    const pollInterval = 5000; // 5 seconds
+    
+    console.log(`⏳ Waiting for transformation of ${publicId}...`);
+    
+    while (Date.now() - startTime < maxWaitTime) {
+      const status = await this.checkTransformationStatus(publicId, transformations);
+      
+      if (status.ready) {
+        console.log(`✅ Transformation complete for ${publicId}`);
+        return {
+          success: true,
+          url: status.url,
+          bytes: status.bytes,
+          duration: status.duration
+        };
+      }
+      
+      if (status.error) {
+        throw new Error(`Transformation check failed: ${status.error}`);
+      }
+      
+      // Wait before next poll
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+    
+    // Timeout - return generated URL as fallback
+    console.warn(`⚠️ Transformation timeout for ${publicId}, using generated URL`);
+    const fallbackUrl = this.generateCompressedUrl(publicId, transformations);
+    
+    return {
+      success: true,
+      url: fallbackUrl,
+      bytes: null,
+      duration: null,
+      timeout: true
+    };
   }
 
   /**
