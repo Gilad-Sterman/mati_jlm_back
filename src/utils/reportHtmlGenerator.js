@@ -217,7 +217,7 @@ function generateReportHtml(report, session, client) {
         </div>
         
         <div class="document-content">
-          ${isNewStructure ? generateNewStructureContent(content, titles) : generateLegacyStructureContent(content, titles)}
+          ${isNewStructure ? generateNewStructureContent(content, titles, isHebrew) : generateLegacyStructureContent(content, titles)}
         </div>
       </body>
       </html>
@@ -233,7 +233,7 @@ function generateReportHtml(report, session, client) {
 /**
  * Generate HTML content for the new report structure
  */
-function generateNewStructureContent(content, titles) {
+function generateNewStructureContent(content, titles, isHebrew = false) {
   let html = '';
   
   // General Summary Section
