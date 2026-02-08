@@ -760,11 +760,11 @@ function getLocalizedTitles(isHebrew) {
 }
 
 /**
- * Generate HTML for just the action items section
+ * Generate simplified HTML for just the action items section
  * @param {Object} report - The report object from the database
  * @param {Object} session - The session object with client and adviser info
  * @param {Object} client - The client object
- * @returns {String} HTML content for action items only
+ * @returns {String} Clean HTML content for action items only (for Make.com email templates)
  */
 function generateActionItemsHtml(report, session, client) {
   try {
@@ -774,7 +774,7 @@ function generateActionItemsHtml(report, session, client) {
       : report.content;
     
     if (!content) {
-      return '<p>No action items available</p>';
+      return '<div class="no-actions">No action items available</div>';
     }
 
     // Detect language from session transcription metadata
@@ -786,46 +786,44 @@ function generateActionItemsHtml(report, session, client) {
 
     // Check for new structure (action_items array)
     if (content.action_items && Array.isArray(content.action_items) && content.action_items.length > 0) {
-      let html = `
-        <div style="font-family: ${isHebrew ? '"Segoe UI", Tahoma, Arial, sans-serif' : 'Arial, sans-serif'}; direction: ${isHebrew ? 'rtl' : 'ltr'}; text-align: ${isHebrew ? 'right' : 'left'};">
-          <h3 style="color: #000; margin-bottom: 1rem; font-size: 1.2rem;">${titles.actionItems}</h3>
-          <div style="margin-bottom: 1rem;">
-      `;
+      let html = `<div class="action-items" dir="${isHebrew ? 'rtl' : 'ltr'}">
+  <h3 class="title">${titles.actionItems}</h3>`;
       
       content.action_items.forEach((item, index) => {
         html += `
-          <div style="margin-bottom: 1rem; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; background-color: #f9f9f9;">
-            <div style="font-weight: bold; margin-bottom: 0.5rem; color: #000;">
-              ${index + 1}. ${item.task}
-            </div>
-        `;
+  <div class="action-item">
+    <div class="task">${index + 1}. ${item.task}</div>`;
         
         // Add owner, deadline, status if available
         if (item.owner || item.deadline || item.status) {
-          html += `<div style="font-size: 0.9rem; color: #666; margin-top: 0.5rem;">`;
+          html += `
+    <div class="details">`;
           
           if (item.owner) {
-            html += `<span style="margin-right: 1rem;"><strong>${isHebrew ? 'אחראי' : 'Owner'}:</strong> ${translateOwner(item.owner, isHebrew)}</span>`;
+            html += `
+      <div class="owner">${isHebrew ? 'אחראי' : 'Owner'}: ${translateOwner(item.owner, isHebrew)}</div>`;
           }
           
           if (item.deadline) {
-            html += `<span style="margin-right: 1rem;"><strong>${isHebrew ? 'מועד יעד' : 'Deadline'}:</strong> ${item.deadline}</span>`;
+            html += `
+      <div class="deadline">${isHebrew ? 'מועד יעד' : 'Deadline'}: ${item.deadline}</div>`;
           }
           
           if (item.status) {
-            html += `<span><strong>${isHebrew ? 'סטטוס' : 'Status'}:</strong> ${translateStatus(item.status, isHebrew)}</span>`;
+            html += `
+      <div class="status">${isHebrew ? 'סטטוס' : 'Status'}: ${translateStatus(item.status, isHebrew)}</div>`;
           }
           
-          html += `</div>`;
+          html += `
+    </div>`;
         }
         
-        html += `</div>`;
+        html += `
+  </div>`;
       });
       
       html += `
-          </div>
-        </div>
-      `;
+</div>`;
       
       return html;
     }
@@ -836,44 +834,44 @@ function generateActionItemsHtml(report, session, client) {
       const hasRecommendation = content.agreed_actions.concrete_recommendation && typeof content.agreed_actions.concrete_recommendation === 'string' && content.agreed_actions.concrete_recommendation.trim();
       
       if (hasImmediateActions || hasRecommendation) {
-        let html = `
-          <div style="font-family: ${isHebrew ? '"Segoe UI", Tahoma, Arial, sans-serif' : 'Arial, sans-serif'}; direction: ${isHebrew ? 'rtl' : 'ltr'}; text-align: ${isHebrew ? 'right' : 'left'};">
-            <h3 style="color: #000; margin-bottom: 1rem; font-size: 1.2rem;">${titles.agreedActions}</h3>
-        `;
+        let html = `<div class="action-items legacy" dir="${isHebrew ? 'rtl' : 'ltr'}">
+  <h3 class="title">${titles.agreedActions}</h3>`;
         
         if (hasImmediateActions) {
           html += `
-            <div style="margin-bottom: 1rem;">
-              <h4 style="color: #000; margin-bottom: 0.5rem;">Immediate Actions</h4>
-              <ul style="margin: 0; padding-left: 1.5rem;">
-          `;
+  <div class="immediate-actions">
+    <h4 class="subtitle">Immediate Actions</h4>
+    <ul class="actions-list">`;
           
           content.agreed_actions.immediate_actions.forEach(action => {
-            html += `<li style="margin-bottom: 0.5rem;">${action}</li>`;
+            html += `
+      <li class="action">${action}</li>`;
           });
           
-          html += `</ul></div>`;
+          html += `
+    </ul>
+  </div>`;
         }
         
         if (hasRecommendation) {
           html += `
-            <div style="margin-bottom: 1rem;">
-              <h4 style="color: #000; margin-bottom: 0.5rem;">Recommendation</h4>
-              <p style="margin: 0;">${content.agreed_actions.concrete_recommendation}</p>
-            </div>
-          `;
+  <div class="recommendation">
+    <h4 class="subtitle">Recommendation</h4>
+    <p class="content">${content.agreed_actions.concrete_recommendation}</p>
+  </div>`;
         }
         
-        html += `</div>`;
+        html += `
+</div>`;
         return html;
       }
     }
     
-    return '<p>No action items available</p>';
+    return '<div class="no-actions">No action items available</div>';
     
   } catch (error) {
     console.error('Error generating action items HTML:', error);
-    return '<p>Error generating action items</p>';
+    return '<div class="error">Error generating action items</div>';
   }
 }
 
